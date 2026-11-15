@@ -183,12 +183,8 @@ def crise_2022(rendements, poids):
             "debut": str(r.index[0].date()), "fin": str(r.index[-1].date())}
 
 
-def analyser(portefeuille):
-    """Mesure le portefeuille (symbole -> montant en CAD) et renvoie les mesures du contrat.
-
-    Lève ValueError si un symbole n'est pas couvert par le jeu de données ou si le portefeuille
-    est vide : on signale, on n'ignore jamais en silence (étape 9).
-    """
+def _montants(portefeuille):
+    """Symbole -> montant positif, symboles en majuscules. Lève ValueError si vide ou non couvert."""
     montants = {}
     for s, m in portefeuille.items():
         if float(m) > 0:
@@ -200,7 +196,61 @@ def analyser(portefeuille):
     if manquants:
         raise ValueError("Symboles non couverts par le jeu de données : " + ", ".join(manquants)
                          + ". Retirer ces lignes ou les remplacer par un des 31 actifs couverts.")
+    return montants
 
+
+def _part_effacee(rendements, poids):
+    """Part du risque que la diversification efface : 1 - volatilité réelle / moyenne pondérée
+    des volatilités des titres (ce qu'elle serait si tous les titres bougeaient ensemble)."""
+    reelle = float(np.sqrt(poids @ (rendements.cov().values * JOURS_PAR_AN) @ poids))
+    moyenne = float(poids @ (rendements.std(ddof=1).values * np.sqrt(JOURS_PAR_AN)))
+    return 1 - reelle / moyenne if moyenne > 0 else 0.0
+
+
+def trajectoire_crise_2022(portefeuille):
+    """Ce qui serait arrivé à ce portefeuille, avec ses montants actuels, pendant l'année 2022.
+
+    Pour le graphique de l'interface ; hors du contrat d'analyser, pour ne pas alourdir ce que
+    l'agent reçoit. Valeur en dollars jour après jour (pondérations constantes, départ = capital
+    actuel la veille de la première séance de 2022), sommet et creux de la pire baisse, et la part
+    du risque effacée par la diversification sur cinq ans puis pendant 2022 seulement.
+    None si le portefeuille n'a pas de prix en 2022.
+    """
+    montants = _montants(portefeuille)
+    capital = sum(montants.values())
+    ordre = list(montants)
+    poids = np.array([montants[s] / capital for s in ordre])
+    prix = prix_cad()[ordre].dropna()
+    rendements = (prix / prix.shift(1) - 1).dropna()
+    r = rendements.loc[CRISE[0]:CRISE[1]]
+    if len(r) < 20:
+        return None
+    veille = prix.index[prix.index.get_loc(r.index[0]) - 1]
+    valeurs = capital * np.concatenate([[1.0], np.cumprod(1 + r.values @ poids)])
+    dates = [str(veille.date())] + [str(d.date()) for d in r.index]
+    creux = int(np.argmin(valeurs / np.maximum.accumulate(valeurs)))
+    sommet = int(np.argmax(valeurs[:creux + 1]))
+    return {
+        "dates": dates,
+        "valeurs": [float(v) for v in valeurs],
+        "capital": float(capital),
+        "sommet": {"date": dates[sommet], "valeur": float(valeurs[sommet])},
+        "creux": {"date": dates[creux], "valeur": float(valeurs[creux])},
+        "perte": float(1 - valeurs[creux] / valeurs[sommet]),
+        "perte_dollars": float(valeurs[sommet] - valeurs[creux]),
+        "valeur_fin": float(valeurs[-1]),
+        "part_effacee_cinq_ans": _part_effacee(rendements, poids),
+        "part_effacee_2022": _part_effacee(r, poids),
+    }
+
+
+def analyser(portefeuille):
+    """Mesure le portefeuille (symbole -> montant en CAD) et renvoie les mesures du contrat.
+
+    Lève ValueError si un symbole n'est pas couvert par le jeu de données ou si le portefeuille
+    est vide : on signale, on n'ignore jamais en silence (étape 9).
+    """
+    montants = _montants(portefeuille)
     connus = univers()
     capital = sum(montants.values())
     ordre = list(montants)

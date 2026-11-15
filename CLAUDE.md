@@ -159,7 +159,7 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   que `piste_c` reprend automatiquement dans `limites`, et depuis le 15 novembre le gain de
   diversification de Markowitz : `volatilite_par_titre`, `volatilite_sans_diversification` (moyenne
   pondérée des volatilités), `gain_diversification` (écart, en décimal) et `ratio_diversification`.
-  Aucun rendement espéré n'intervient ; l'interface l'affiche dans l'onglet « Gain de diversification ».
+  Aucun rendement espéré n'intervient. Ces clés restent dans le contrat, mais l'onglet « Gain de diversification » a été remplacé par « En cas de crise (2022) », qui appelle `piste_a.trajectoire_crise_2022(portefeuille)` (hors contrat d'`analyser`, pour ne pas alourdir ce que reçoit l'agent) : valeur en dollars jour après jour pendant 2022, sommet, creux, et part du risque effacée par la diversification sur cinq ans puis en 2022.
   Aussi depuis le 15 novembre, la résistance à la crise de 2022 (portefeuille rejoué sur l'année 2022) :
   `perte_crise_2022` (pire baisse pendant 2022), `variation_2022`, `perte_crise_2022_par_titre`. `evaluer`
   en fait une quatrième note, `resistance_crise` (cible `crise_max` : 12 %, 20 %, 35 % selon le niveau,

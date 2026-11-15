@@ -13,8 +13,8 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from piste_a import analyser, symboles_non_couverts, univers
-from piste_b import MARGE_CONFORT, NOTE_LIMITE, evaluer, nombre, pct, proposer_scenarios
+from piste_a import analyser, symboles_non_couverts, trajectoire_crise_2022, univers
+from piste_b import MARGE_CONFORT, NOTE_LIMITE, appliquer, evaluer, nombre, pct, proposer_scenarios
 from piste_c import demander
 
 AVERTISSEMENT = ("Simulation à but éducatif, à partir de données historiques. "
@@ -382,43 +382,155 @@ def tableau_poids(mesures):
     })
 
 
-def graphique_diversification(mesures):
-    """Volatilité de chaque titre pris seul, moyenne pondérée des titres, volatilité réelle du portefeuille.
+MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
 
-    Forme « mise en relief » : une seule série porte l'histoire, le portefeuille réel, en bleu ;
-    les titres pris isolément et leur moyenne pondérée sont le contexte, en gris. L'écart entre
-    la moyenne pondérée et le portefeuille est le gain de diversification de Markowitz : il ne
-    fait intervenir aucun rendement espéré, seulement les covariances.
+
+def graphique_crise(trajet, limite):
+    """La valeur du portefeuille pendant 2022, en dollars, avec la limite de perte du profil.
+
+    Une seule série (le portefeuille), donc pas de légende : le titre de la section la nomme.
+    La ligne pointillée part du sommet : c'est la valeur sous laquelle la baisse aurait dépassé
+    la perte tolérée par ce profil. Sommet et creux sont étiquetés ; le reste se lit au survol.
     """
     theme = mode_theme()
-    titres = sorted(mesures["volatilite_par_titre"].items(), key=lambda couple: couple[1], reverse=True)
-    types = ["Portefeuille réel", "Moyenne pondérée des titres", "Titre pris seul"]
-    df = pd.DataFrame(
-        [{"Ligne": "Portefeuille réel", "Type": types[0], "Valeur": 100 * mesures["volatilite"]},
-         {"Ligne": "Si tout bougeait ensemble", "Type": types[1],
-          "Valeur": 100 * mesures["volatilite_sans_diversification"]}]
-        + [{"Ligne": s, "Type": types[2], "Valeur": 100 * v} for s, v in titres])
-    gris_clair, gris = ("#c3c2b7", "#898781") if theme == "clair" else ("#52514e", "#898781")
+    bleu, encre, douce = COULEURS[theme][0], ENCRE[theme], ENCRE_DOUCE[theme]
+    df = pd.DataFrame({"date": pd.to_datetime(trajet["dates"]), "valeur": trajet["valeurs"]})
+    df["texte"] = [dollars(v) for v in df["valeur"]]
+    df["jour"] = [f"{d.day} {MOIS[d.month - 1]} {d.year}" for d in df["date"]]
+    bas = min(trajet["creux"]["valeur"], trajet["sommet"]["valeur"] * (1 - limite) if limite else 1e18)
+    echelle = alt.Scale(domain=[bas * 0.92, max(trajet["valeurs"]) * 1.04], nice=False)
+    mois = "[" + ", ".join(f"'{m}'" for m in MOIS) + "][month(datum.value)]"
+    x = alt.X("date:T", title=None, axis=alt.Axis(labelExpr=mois, tickCount="month", labelFontSize=13,
+                                                     domain=False, ticks=False, grid=False, labelColor=douce))
+    y = alt.Y("valeur:Q", title="Valeur du portefeuille (CAD)", scale=echelle,
+              axis=alt.Axis(tickCount=5, labelExpr="replace(format(datum.value, ',.0f'), ',', ' ') + ' $'",
+                            domain=False, ticks=False, gridOpacity=0.35,
+                            labelFontSize=13, titleFontSize=13, titlePadding=12, labelColor=douce,
+                            titleColor=douce))
+    survol = alt.selection_point(fields=["date"], nearest=True, on="pointerover", empty=False, clear="pointerout")
+    ligne = alt.Chart(df).mark_line(strokeWidth=2, color=bleu).encode(x=x, y=y)
+    cible = alt.Chart(df).mark_point(opacity=0, size=400).encode(
+        x=x, y=y, tooltip=[alt.Tooltip("jour:N", title="Date"),
+                           alt.Tooltip("texte:N", title="Valeur")]).add_params(survol)
+    repere = alt.Chart(df).mark_rule(color=douce, strokeWidth=1).encode(x=x).transform_filter(survol)
+    point = (alt.Chart(df).mark_point(filled=True, size=90, color=bleu, stroke=FOND[theme], strokeWidth=2)
+             .encode(x=x, y=y).transform_filter(survol))
 
-    base = alt.Chart(df).transform_calculate(
-        etiquette="replace(format(datum.Valeur, '.1f'), '.', ',') + ' %'",
-    ).encode(
-        y=alt.Y("Ligne:N", sort=list(df["Ligne"]), title=None,
-                axis=alt.Axis(labelFontSize=15, ticks=False, domain=False, labelPadding=14, labelLimit=320)),
-        x=alt.X("Valeur:Q", title="Volatilité annuelle (%)",
-                scale=alt.Scale(domain=[0, float(df["Valeur"].max()) * 1.2], nice=False),
-                axis=alt.Axis(tickCount=5, format=".0f", domain=False, gridOpacity=0.35,
-                              labelFontSize=13, titleFontSize=13, titlePadding=12)),
-        color=alt.Color("Type:N", sort=types,
-                        scale=alt.Scale(domain=types, range=[COULEURS[theme][0], gris, gris_clair]),
-                        legend=alt.Legend(title=None, orient="top", direction="horizontal",
-                                          symbolType="square", labelFontSize=14, symbolSize=180, offset=14)),
-        tooltip=[alt.Tooltip("Ligne:N", title="Ligne"), alt.Tooltip("etiquette:N", title="Volatilité annuelle")],
-    )
-    barres = base.mark_bar(size=24, cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
-    etiquettes = (base.mark_text(align="left", baseline="middle", dx=8, fontSize=14)
-                  .encode(text="etiquette:N", color=alt.value(ENCRE[theme])))
-    return (barres + etiquettes).properties(height=max(240, 52 * len(df)))
+    extremes = pd.DataFrame([
+        {"date": pd.to_datetime(trajet["sommet"]["date"]), "valeur": trajet["sommet"]["valeur"],
+         "texte": f"Sommet : {dollars(trajet['sommet']['valeur'])}", "dy": -16, "aligne": "left"},
+        {"date": pd.to_datetime(trajet["creux"]["date"]), "valeur": trajet["creux"]["valeur"],
+         "texte": f"Creux : {dollars(trajet['creux']['valeur'])}", "dy": 20, "aligne": "center"}])
+    marques = alt.Chart(extremes).mark_point(filled=True, size=110, color=bleu, stroke=FOND[theme],
+                                             strokeWidth=2).encode(x=x, y=y)
+    textes = [alt.Chart(extremes.iloc[[k]]).mark_text(fontSize=13, fontWeight=600, dy=int(extremes.dy[k]),
+                                                       align=extremes.aligne[k], dx=4 if k == 0 else 0,
+                                                       color=encre).encode(x=x, y=y, text="texte:N")
+              for k in range(2)]
+    couches = [ligne, repere, point, cible, marques] + textes
+    if limite:
+        seuil = trajet["sommet"]["valeur"] * (1 - limite)
+        regle = pd.DataFrame({"date": [df["date"].iloc[-1]], "valeur": [seuil], "texte": [f"Votre limite : baisse de {pourcent(limite, 0)} "
+                                                           f"depuis le sommet ({dollars(seuil)})"]})
+        couches.insert(0, alt.Chart(regle).mark_rule(color=douce, strokeDash=[6, 4], strokeWidth=1.5)
+                       .encode(y=alt.Y("valeur:Q", scale=echelle)))
+        couches.append(alt.Chart(regle).mark_text(align="right", dy=-8, fontSize=13, color=douce)
+                       .encode(x=x, y=alt.Y("valeur:Q", scale=echelle), text="texte:N"))
+    return alt.layer(*couches).properties(height=380)
+
+
+def graphique_crise_comparee(actuel, scenario, limite):
+    """Le portefeuille actuel et le scénario rejoués pendant 2022, sur le même axe en dollars.
+
+    Deux séries : légende en haut et nom au bout de chaque ligne (l'identité ne repose jamais sur
+    la seule couleur). Le portefeuille actuel est le contexte, en gris ; le scénario, en bleu.
+    La limite du profil part de la valeur de départ, commune aux deux (même total).
+    """
+    theme = mode_theme()
+    bleu, douce, gris = COULEURS[theme][0], ENCRE_DOUCE[theme], "#898781"
+    noms = ["Portefeuille actuel", "Scénario"]
+    # Les deux portefeuilles n'ont pas forcément le même calendrier (jours fériés de Toronto et de
+    # New York, crypto) : on garde les dates communes, sans remplir de trou.
+    large = pd.merge(pd.DataFrame({"date": pd.to_datetime(actuel["dates"]), noms[0]: actuel["valeurs"]}),
+                     pd.DataFrame({"date": pd.to_datetime(scenario["dates"]), noms[1]: scenario["valeurs"]}),
+                     on="date", how="inner")
+    dates = large["date"]
+    large["jour"] = [f"{d.day} {MOIS[d.month - 1]} {d.year}" for d in dates]
+    large["texte_actuel"] = [dollars(v) for v in large[noms[0]]]
+    large["texte_scenario"] = [dollars(v) for v in large[noms[1]]]
+    long = large.melt(id_vars=["date"], value_vars=noms, var_name="Série", value_name="valeur")
+    seuil = actuel["valeurs"][0] * (1 - limite) if limite else None
+    plus_bas = min(min(actuel["valeurs"]), min(scenario["valeurs"]), seuil or 1e18)
+    plus_haut = max(max(actuel["valeurs"]), max(scenario["valeurs"]))
+    echelle = alt.Scale(domain=[plus_bas * 0.92, plus_haut * 1.04], nice=False)
+    mois = "[" + ", ".join(f"'{m}'" for m in MOIS) + "][month(datum.value)]"
+    x = alt.X("date:T", title=None, axis=alt.Axis(labelExpr=mois, tickCount="month", labelFontSize=12,
+                                                     domain=False, ticks=False, grid=False, labelColor=douce))
+    y = alt.Y("valeur:Q", title="Valeur (CAD)", scale=echelle,
+              axis=alt.Axis(tickCount=4, labelExpr="replace(format(datum.value, ',.0f'), ',', ' ') + ' $'",
+                            domain=False, ticks=False, gridOpacity=0.35, labelFontSize=12, titleFontSize=12,
+                            labelColor=douce, titleColor=douce))
+    palette = alt.Scale(domain=noms, range=[gris, bleu])
+    couleur = alt.Color("Série:N", sort=noms, scale=palette,
+                        legend=alt.Legend(title=None, orient="top", direction="horizontal", symbolType="stroke",
+                                          symbolStrokeWidth=3, labelFontSize=13, offset=10))
+    lignes = alt.Chart(long).mark_line(strokeWidth=2).encode(x=x, y=y, color=couleur)
+    fins = long[long["date"] == long["date"].max()]
+    noms_fin = (alt.Chart(fins).mark_text(align="right", dy=-14, fontSize=12, fontWeight=600, color=ENCRE[theme])
+                .encode(x=x, y=y, text="Série:N"))
+    survol = alt.selection_point(fields=["date"], nearest=True, on="pointerover", empty=False, clear="pointerout")
+    cibles = alt.Chart(large).mark_rule(opacity=0, strokeWidth=12).encode(
+        x=x, tooltip=[alt.Tooltip("jour:N", title="Date"), alt.Tooltip("texte_actuel:N", title=noms[0]),
+                      alt.Tooltip("texte_scenario:N", title=noms[1])]).add_params(survol)
+    repere = alt.Chart(large).mark_rule(color=douce, strokeWidth=1).encode(x=x).transform_filter(survol)
+    points = (alt.Chart(long).mark_point(filled=True, size=70, stroke=FOND[theme], strokeWidth=2)
+              .encode(x=x, y=y, color=alt.Color("Série:N", sort=noms, scale=palette, legend=None))
+              .transform_filter(survol))
+    couches = [lignes, noms_fin, repere, points, cibles]
+    if seuil:
+        regle = pd.DataFrame({"date": [dates[0]], "valeur": [seuil],
+                              "texte": [f"Votre limite : baisse de {pourcent(limite, 0)} ({dollars(seuil)})"]})
+        couches.insert(0, alt.Chart(regle).mark_rule(color=douce, strokeDash=[6, 4], strokeWidth=1.5)
+                       .encode(y=alt.Y("valeur:Q", scale=echelle)))
+        couches.append(alt.Chart(regle).mark_text(align="left", dy=-8, dx=4, fontSize=12, color=douce)
+                       .encode(x=x, y=alt.Y("valeur:Q", scale=echelle), text="texte:N"))
+    return alt.layer(*couches).properties(height=320)
+
+
+def afficher_changements(scenario):
+    """Onglet « Changements » d'un scénario : poids avant et après, ce qui s'améliore et se dégrade."""
+    # Tableau des titres dont le poids change : plus lisible que la phrase dès 3 lignes.
+    p0, p1 = scenario.get("poids_avant", {}), scenario.get("poids_apres", {})
+    lignes = [{"Titre": s, "Avant": f"{100 * p0.get(s, 0):.1f} %", "Après": f"{100 * p1.get(s, 0):.1f} %",
+               "Écart (points)": round(100 * (p1.get(s, 0) - p0.get(s, 0)), 1)}
+              for s in dict.fromkeys(list(p0) + list(p1)) if abs(p1.get(s, 0) - p0.get(s, 0)) >= 0.005]
+    if len(lignes) > 2:
+        lignes.sort(key=lambda l: l["Écart (points)"])
+        st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch")
+    mieux, moins_bien = st.columns(2)
+    mieux.markdown("**Ce qui s'améliore**")
+    for ligne in scenario["ameliore"] or ["Rien"]:
+        mieux.write("- " + md(ligne))
+    moins_bien.markdown("**Ce qui se dégrade**")
+    for ligne in scenario["degrade"] or ["Rien"]:
+        moins_bien.write("- " + md(ligne))
+
+
+def afficher_crise_scenario(portefeuille, scenario, resultat):
+    """Onglet « Et pendant la crise de 2022 ? » : le portefeuille actuel et le scénario rejoués en 2022."""
+    actuel = trajectoire_crise_2022(portefeuille)
+    apres = trajectoire_crise_2022(appliquer(portefeuille, scenario["changement"]))
+    if actuel is None or apres is None:
+        st.info("Pas de prix en 2022 pour l'un des titres : la crise ne peut pas être rejouée.")
+        return
+    note_crise = next((n for n in resultat["notes"] if n["nom"] == "resistance_crise"), None)
+    limite = note_crise["cible"] if note_crise else None
+    st.markdown(md(f"Baisse au pire moment : **{dollars(actuel['perte_dollars'])}** actuellement "
+                   f"({pourcent(actuel['perte'])}), **{dollars(apres['perte_dollars'])}** dans ce scénario "
+                   f"({pourcent(apres['perte'])})."))
+    st.altair_chart(graphique_crise_comparee(actuel, apres, limite), use_container_width=True)
+    st.warning("Ce scénario a été trouvé à partir de ces mêmes données : il est normal qu'il ait mieux traversé "
+               "2022. C'est une illustration, pas une preuve qu'il résisterait à une autre crise.")
 
 
 # ------------------------------------------------------------------ état et page
@@ -603,8 +715,8 @@ def resultats():
     # l'autre. Le tableau reste à un clic, ce qui est la contrepartie exigée par les couleurs :
     # il se lit sans distinguer le bleu de l'orange et sans survoler les barres.
     st.header("D'où vient le risque", divider="gray")
-    onglet_graphique, onglet_tableau, onglet_diversification = st.tabs(
-        ["Graphique", "Tableau", "Gain de diversification"])
+    onglet_graphique, onglet_tableau, onglet_crise = st.tabs(
+        ["Graphique", "Tableau", "En cas de crise (2022)"])
     with onglet_graphique:
         st.altair_chart(graphique(mesures), use_container_width=True)
         st.caption("Quand la barre orange dépasse la bleue, le titre pèse plus lourd dans le "
@@ -618,23 +730,40 @@ def resultats():
                 "Montant (CAD)": st.column_config.NumberColumn("Montant (CAD)", format="%d $"),
             })
         st.caption("Les mêmes chiffres que le graphique, lisibles sans couleur ni survol.")
-    with onglet_diversification:
-        if "gain_diversification" not in mesures:
-            st.info("Le gain de diversification n'est pas fourni par cette version des mesures.")
+    with onglet_crise:
+        trajet = trajectoire_crise_2022(portefeuille)
+        if trajet is None:
+            st.info("Ce portefeuille n'a pas de prix en 2022 : la crise ne peut pas être rejouée.")
         else:
+            note_crise = next((n for n in resultat["notes"] if n["nom"] == "resistance_crise"), None)
+            limite = note_crise["cible"] if note_crise else None
+            st.markdown(md(
+                f"Si ce portefeuille de **{dollars(trajet['capital'])}** avait traversé la crise de 2022 avec les "
+                f"mêmes montants, il serait passé de {dollars(trajet['sommet']['valeur'])} à "
+                f"**{dollars(trajet['creux']['valeur'])}** au pire moment : une baisse de "
+                f"**{dollars(trajet['perte_dollars'])}** ({pourcent(trajet['perte'])})."))
             c1, c2, c3 = st.columns(3)
-            c1.metric("Si tout bougeait ensemble", pourcent(mesures["volatilite_sans_diversification"]),
-                      help="Moyenne pondérée des volatilités des titres : la volatilité qu'aurait le "
-                           "portefeuille si tous ses titres montaient et baissaient en même temps.")
-            c2.metric("Volatilité réelle du portefeuille", pourcent(mesures["volatilite"]))
-            c3.metric("Gain de diversification",
-                      f"{100 * mesures['gain_diversification']:.1f} points".replace(".", ","),
-                      help=f"Ratio de diversification : {mesures['ratio_diversification']:.2f}".replace(".", ","))
-            st.altair_chart(graphique_diversification(mesures), use_container_width=True)
-            st.caption("Les titres ne montent pas et ne baissent pas tous en même temps : l'écart entre la "
-                       "moyenne pondérée des volatilités et la volatilité réelle est le seul gain que la "
-                       "théorie de Markowitz garantit. Il repose sur les covariances passées, sans aucun "
-                       "rendement espéré.")
+            c1.metric("Baisse au pire moment", dollars(trajet["perte_dollars"]),
+                      delta=f"-{pourcent(trajet['perte'])}", delta_color="inverse",
+                      help="Du sommet au creux, pendant l'année 2022.")
+            if limite:
+                tolere = trajet["sommet"]["valeur"] * limite
+                c2.metric("Ce que ce profil tolère", dollars(tolere),
+                          help=f"Baisse de {pourcent(limite, 0)} depuis le sommet : la cible de résistance "
+                               "à la crise pour ce niveau de risque (choix de l'équipe).")
+            c3.metric("Valeur fin 2022", dollars(trajet["valeur_fin"]),
+                      delta=dollars(trajet["valeur_fin"] - trajet["capital"]))
+            st.altair_chart(graphique_crise(trajet, limite), use_container_width=True)
+            a, b = trajet["part_effacee_cinq_ans"], trajet["part_effacee_2022"]
+            constat = ("La diversification a moins protégé pendant la crise : les titres se sont mis à baisser "
+                       "ensemble." if b < a - 0.02 else "La diversification a tenu pendant la crise.")
+            st.markdown(md(f"**Et la diversification ?** En temps normal (sur cinq ans), le fait que les titres ne "
+                           f"bougent pas ensemble efface {pourcent(a, 0)} du risque de ce portefeuille. Pendant "
+                           f"2022, seulement {pourcent(b, 0)}. {constat}"))
+            st.caption("Le portefeuille actuel rejoué jour après jour de janvier à décembre 2022, à pondérations "
+                       "constantes, en dollars canadiens. C'est la seule crise couverte par les données (à partir "
+                       "de novembre 2021) : ni 2008 ni mars 2020, et la prochaine crise peut toucher d'autres "
+                       "actifs. Ce n'est pas une prévision.")
 
     # ---- alertes
     st.header("Alertes", divider="gray")
@@ -659,21 +788,11 @@ def resultats():
             texte.subheader(f"Scénario {numero}")
             texte.write(md(scenario["phrase"]))
             chiffre.metric("Score après", f"{apres} / 100", delta=apres - avant)
-            # Tableau des titres dont le poids change : plus lisible que la phrase dès 3 lignes.
-            p0, p1 = scenario.get("poids_avant", {}), scenario.get("poids_apres", {})
-            lignes = [{"Titre": s, "Avant": f"{100 * p0.get(s, 0):.1f} %", "Après": f"{100 * p1.get(s, 0):.1f} %",
-                       "Écart (points)": round(100 * (p1.get(s, 0) - p0.get(s, 0)), 1)}
-                      for s in dict.fromkeys(list(p0) + list(p1)) if abs(p1.get(s, 0) - p0.get(s, 0)) >= 0.005]
-            if len(lignes) > 2:
-                lignes.sort(key=lambda l: l["Écart (points)"])
-                st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch")
-            mieux, moins_bien = st.columns(2)
-            mieux.markdown("**Ce qui s'améliore**")
-            for ligne in scenario["ameliore"] or ["Rien"]:
-                mieux.write("- " + md(ligne))
-            moins_bien.markdown("**Ce qui se dégrade**")
-            for ligne in scenario["degrade"] or ["Rien"]:
-                moins_bien.write("- " + md(ligne))
+            onglet_changements, onglet_crise_scenario = st.tabs(["Changements", "Et pendant la crise de 2022 ?"])
+            with onglet_changements:
+                afficher_changements(scenario)
+            with onglet_crise_scenario:
+                afficher_crise_scenario(portefeuille, scenario, resultat)
             with st.expander("Hypothèses de ce scénario"):
                 for hypothese in scenario["hypotheses"]:
                     st.write("- " + md(hypothese))
