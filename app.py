@@ -199,7 +199,7 @@ with onglet_diagnostic:
     st.subheader("Poids et part du risque")
     colonne_graphique, colonne_tableau = st.columns([3, 2])
     with colonne_graphique:
-        st.altair_chart(graphique(mesures), width="stretch")
+        st.altair_chart(graphique(mesures), use_container_width=True)
         st.caption("Quand la barre orange dépasse la bleue, le titre pèse plus lourd dans le risque que dans le capital.")
     with colonne_tableau:
         st.dataframe(tableau_poids(mesures), hide_index=True, width="stretch")
