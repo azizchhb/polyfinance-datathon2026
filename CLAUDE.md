@@ -72,7 +72,7 @@ Quatre pistes en parallèle :
 | A · Calculs | `analyser(portefeuille)` -> mesures | **Écrit** : `piste_a.py` (moteur du collègue + `analyser` du contrat, données lues sur S3). Repris par Aziz. |
 | B · Profil et score | `evaluer`, `simuler`, `proposer_scenarios` | **Écrit et testé** : `piste_b.py` (version du collègue du 15 novembre, 7 tests dans `tests/test_piste_b.py`). Cibles à calibrer avec les vrais chiffres. |
 | C · Agent et AWS | `demander(texte, portefeuille, profil)` | **Écrit et testé** : `piste_c.py` (Bedrock, gouvernance, trace CloudWatch) |
-| D · Interface | `app.py` (Streamlit) | Écrit, pistes A et C branchées, lancé avec `python -m streamlit run app.py` |
+| D · Interface | `app.py` (Streamlit) | **Reprise par Aziz le 15 novembre** : deux écrans (questionnaire plein écran, puis une longue page de résultats avec la discussion en bas), thème clair dans `.streamlit/config.toml`, portefeuille éditable avec la liste des 31 titres. Livrables (vidéo, one-pager, documentation) à faire. |
 
 ## Les données : le dossier `alphaforge_starter`
 
