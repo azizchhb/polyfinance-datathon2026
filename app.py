@@ -582,18 +582,14 @@ def questionnaire():
     exclus = st.multiselect("Secteurs à exclure (approximation ESG, par secteur)", SECTEURS,
                             default=base["exclure_secteurs"], key=f"exclus_{k}")
     interet = st.multiselect("Secteurs d'intérêt", SECTEURS, default=base["secteurs_interet"], key=f"interet_{k}")
-    montant_vise = cotisation = None
-    if st.checkbox("J'ai un montant à atteindre", value=bool(base.get("montant_vise")), key=f"vise_{k}"):
-        c1, c2 = st.columns(2)
-        montant_vise = c1.number_input("Montant visé à la fin de l'horizon ($)", min_value=0, step=5000,
-                                       value=int(base.get("montant_vise") or 100000), key=f"montant_{k}")
-        cotisation = c2.number_input("Cotisation mensuelle ($)", min_value=0, step=50,
-                                     value=int(base.get("cotisation_mensuelle") or 0), key=f"cotisation_{k}")
+    # Pas de champ « montant à atteindre » dans le questionnaire : les clés restent dans le profil
+    # (contrat), à vide. Un objectif chiffré écrit dans la discussion passe par l'agent, qui le
+    # transmet à evaluer (voir piste_c).
     profil = {
         "risque": RISQUES[risque], "horizon_annees": horizon, "objectif": OBJECTIFS[objectif],
         "perte_max_toleree": perte, "crypto": "oui" if crypto else "non",
         "exclure_secteurs": exclus, "secteurs_interet": interet,
-        "montant_vise": montant_vise or None, "cotisation_mensuelle": cotisation or None,
+        "montant_vise": None, "cotisation_mensuelle": None,
         "experience": EXPERIENCES[experience],
     }
 
