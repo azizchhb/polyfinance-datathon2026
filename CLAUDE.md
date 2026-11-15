@@ -206,7 +206,8 @@ alertes, `simuler`, `proposer_scenarios`. Le détail des formules est dans le gu
 Le fichier `app.py` est **écrit** : barre latérale (persona, formulaire, CSV), onglets Diagnostic,
 Scénarios et Discussion. Sa logique a été testée avec un substitut de Streamlit, pas dans Streamlit.
 
-- Premier lancement réel : `pip install streamlit pandas matplotlib numpy`, puis `streamlit run app.py`.
+- Premier lancement réel : `pip install streamlit pandas numpy boto3`, puis `python -m streamlit run app.py`.
+  Le graphique « Poids et part du risque » est en Altair (natif Streamlit), plus matplotlib.
 - Brancher les vraies pistes en changeant une ligne d'import en haut de `app.py`, une piste à la fois.
 - Afficher les symboles non couverts renvoyés par la piste A.
 - Livrables : vidéo d'environ 5 minutes (deux personas contrastés), one-pager d'une page,

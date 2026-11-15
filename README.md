@@ -9,7 +9,7 @@ sans jamais donner de conseil. Simulation à but éducatif, aucune transaction r
 ## Lancer
 
 ```powershell
-pip install streamlit pandas numpy matplotlib boto3
+pip install streamlit pandas numpy boto3
 python -m streamlit run app.py     # l'interface
 python piste_c.py                  # démonstration de l'agent sur le persona Robert
 python piste_a.py                  # vérifications des calculs et portefeuilles de référence

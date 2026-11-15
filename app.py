@@ -1,5 +1,5 @@
 """Interface Streamlit de la piste D. Lancer avec : streamlit run app.py"""
-import matplotlib.pyplot as plt
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -20,7 +20,11 @@ VERDICTS = {"adequat": "Adéquat", "a_surveiller": "À surveiller", "inadequat":
 NOMS_NOTES = {"niveau_de_risque": "Niveau de risque",
               "risque_de_perte": "Risque de perte",
               "diversification": "Diversification"}
-BLEU, ORANGE = "#2a78d6", "#eb6834"
+# Deux premières couleurs de la palette catégorielle validée (paire sûre pour le daltonisme),
+# avec leurs pas pour fond sombre. Les textes ne portent jamais la couleur des séries.
+COULEURS = {"clair": ["#2a78d6", "#eb6834"], "sombre": ["#3987e5", "#d95926"]}
+ENCRE = {"clair": "#31333f", "sombre": "#fafafa"}
+SERIES = ["Poids dans le capital", "Part du risque"]
 
 PERSONAS = {
     "Amira": {"risque": 3, "horizon_annees": 15, "objectif": "croissance", "crypto": "oui",
@@ -91,32 +95,59 @@ def formulaire(persona):
     }
 
 
-def graphique(mesures):
-    """Barres côte à côte : poids dans le capital et part du risque, par titre."""
-    symboles = sorted(mesures["poids"], key=mesures["contributions"].get, reverse=True)
-    positions = range(len(symboles))
-    poids = [100 * mesures["poids"][s] for s in symboles]
-    risque = [100 * mesures["contributions"][s] for s in symboles]
+def mode_theme():
+    """« sombre » ou « clair » selon le thème actif de Streamlit (clair si l'information manque)."""
+    try:
+        return "sombre" if st.context.theme.type == "dark" else "clair"
+    except Exception:
+        return "clair"
 
-    fig, ax = plt.subplots(figsize=(8, 0.7 * len(symboles) + 1.4))
-    ax.barh([p - 0.2 for p in positions], poids, height=0.36, color=BLEU, label="Poids dans le capital")
-    ax.barh([p + 0.2 for p in positions], risque, height=0.36, color=ORANGE, label="Part du risque")
-    for p, a, b in zip(positions, poids, risque):
-        ax.text(a + 0.8, p - 0.2, f"{a:.0f} %", va="center", fontsize=9, color="#3d3d3a")
-        ax.text(b + 0.8, p + 0.2, f"{b:.0f} %", va="center", fontsize=9, color="#3d3d3a")
-    ax.set_yticks(list(positions))
-    ax.set_yticklabels(symboles)
-    ax.invert_yaxis()
-    ax.set_xlim(0, max(poids + risque) * 1.15)
-    ax.set_xlabel("% du total")
-    ax.xaxis.grid(True, color="#e1e0d9", linewidth=0.8)
-    ax.set_axisbelow(True)
-    for cote in ("top", "right", "left"):
-        ax.spines[cote].set_visible(False)
-    ax.tick_params(axis="y", length=0)
-    ax.legend(frameon=False, loc="lower right")
-    fig.tight_layout()
-    return fig
+
+def graphique(mesures):
+    """Barres horizontales groupées : poids dans le capital et part du risque, par titre.
+
+    Graphique vectoriel natif : il prend la largeur disponible sans grossir les barres ni les
+    polices, et suit le thème. Les étiquettes ne sont posées que sur la part du risque, qui est
+    l'histoire du graphique ; l'axe, la légende et l'infobulle portent le reste.
+    """
+    theme = mode_theme()
+    symboles = sorted(mesures["poids"], key=mesures["contributions"].get, reverse=True)
+    df = pd.DataFrame(
+        [{"Titre": s, "Mesure": SERIES[0], "Valeur": 100 * mesures["poids"][s]} for s in symboles]
+        + [{"Titre": s, "Mesure": SERIES[1], "Valeur": 100 * mesures["contributions"][s]} for s in symboles])
+
+    base = alt.Chart(df).transform_calculate(
+        affichage="replace(format(datum.Valeur, '.1f'), '.', ',') + ' %'",
+        etiquette="format(datum.Valeur, '.0f') + ' %'",
+    ).encode(
+        y=alt.Y("Titre:N", sort=symboles, title=None,
+                axis=alt.Axis(labelFontSize=13, ticks=False, domain=False, labelPadding=10)),
+        yOffset=alt.YOffset("Mesure:N", sort=SERIES),
+        x=alt.X("Valeur:Q", title="% du total",
+                scale=alt.Scale(domain=[0, float(df["Valeur"].max()) * 1.2], nice=False),
+                axis=alt.Axis(tickCount=5, format=".0f", domain=False, gridOpacity=0.35)),
+        color=alt.Color("Mesure:N", sort=SERIES, scale=alt.Scale(domain=SERIES, range=COULEURS[theme]),
+                        legend=alt.Legend(title=None, orient="top", direction="horizontal", symbolType="square")),
+        tooltip=[alt.Tooltip("Titre:N", title="Titre"), alt.Tooltip("Mesure:N", title="Mesure"),
+                 alt.Tooltip("affichage:N", title="% du total")],
+    )
+    barres = base.mark_bar(size=18, cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+    etiquettes = (base.transform_filter(alt.datum.Mesure == SERIES[1])
+                  .mark_text(align="left", baseline="middle", dx=6, fontSize=12)
+                  .encode(text="etiquette:N", color=alt.value(ENCRE[theme])))
+    return (barres + etiquettes).properties(height=max(120, 48 * len(symboles)))
+
+
+def tableau_poids(mesures):
+    """Les mêmes chiffres que le graphique, en tableau : lisibles sans couleur ni survol."""
+    symboles = sorted(mesures["poids"], key=mesures["contributions"].get, reverse=True)
+    return pd.DataFrame({
+        "Titre": symboles,
+        "Classe": [mesures["classe_par_titre"].get(s, "") for s in symboles],
+        "Secteur": [mesures["secteur_par_titre"].get(s, "") for s in symboles],
+        "Poids (%)": [round(100 * mesures["poids"][s], 1) for s in symboles],
+        "Part du risque (%)": [round(100 * mesures["contributions"][s], 1) for s in symboles],
+    })
 
 
 # ---------------------------------------------------------------------- page
@@ -166,8 +197,12 @@ with onglet_diagnostic:
                 st.caption(note["explication"])
 
     st.subheader("Poids et part du risque")
-    st.pyplot(graphique(mesures))
-    st.caption("Quand la barre orange dépasse la bleue, le titre pèse plus lourd dans le risque que dans le capital.")
+    colonne_graphique, colonne_tableau = st.columns([3, 2])
+    with colonne_graphique:
+        st.altair_chart(graphique(mesures), width="stretch")
+        st.caption("Quand la barre orange dépasse la bleue, le titre pèse plus lourd dans le risque que dans le capital.")
+    with colonne_tableau:
+        st.dataframe(tableau_poids(mesures), hide_index=True, width="stretch")
 
     st.subheader("Alertes")
     if not resultat["alertes"]:
