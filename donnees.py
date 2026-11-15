@@ -7,11 +7,11 @@ Pour la piste A :
     print(provenance())                       # d'où vient chaque fichier lu, à reprendre dans les limites
 
 En ligne de commande :
-    python donnees.py televerser    # dépose alphaforge_starter/ sur S3 (à refaire si les données changent)
+    python donnees.py televerser    # dépose data/alphaforge_starter/ sur S3 (à refaire si les données changent)
     python donnees.py               # test : lit l'univers et les prix depuis S3 et les résume
 
 Ordre de lecture : cache local de S3 (.cache_donnees/), sinon téléchargement depuis S3,
-sinon la copie du dépôt (alphaforge_starter/). Sur Lambda, seul S3 existe.
+sinon la copie du dépôt (data/alphaforge_starter/). Sur Lambda, seul S3 existe.
 Le seau : variable d'environnement SEAU_DONNEES, sinon alphaforge-<numéro de compte>-donnees.
 """
 import os
@@ -25,7 +25,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 ICI = Path(__file__).resolve().parent
-DOSSIER_LOCAL = ICI / "alphaforge_starter"
+DOSSIER_LOCAL = ICI / "data" / "alphaforge_starter"
 DOSSIER_CACHE = Path(os.environ.get("CACHE_DONNEES", ICI / ".cache_donnees"))
 PREFIXE = "alphaforge_starter/"  # « dossier » dans le seau
 FICHIERS = ["prices_daily.csv", "assets_universe.csv", "fx_usdcad_daily.csv", "macro_rates.csv",
@@ -59,7 +59,7 @@ def chemin_local(nom, forcer_s3=False):
         boto3.client("s3", region_name=REGION).download_file(seau(), PREFIXE + nom, str(cache))
         _provenance[nom] = f"s3://{seau()}/{PREFIXE}{nom}"
         return cache
-    except (ClientError, BotoCoreError) as e:
+    except (ClientError, BotoCoreError, OSError) as e:  # S3 injoignable, identifiants expirés, cache inaccessible
         local = DOSSIER_LOCAL / nom
         if local.exists():
             _provenance[nom] = f"copie locale du dépôt (S3 injoignable : {type(e).__name__})"

@@ -231,8 +231,10 @@ if __name__ == "__main__":
     import sys
 
     sys.stdout.reconfigure(encoding="utf-8")
-    import faux
     from piste_b import evaluer, pct
+
+    CLES_CONTRAT = {"volatilite", "perte_max", "poids", "contributions", "poids_par_classe",
+                    "poids_par_secteur", "classe_par_titre", "secteur_par_titre", "capital"}
 
     DEMO = {"NVDA": 10000, "QQQ": 12500, "BTC-USD": 5000, "XIU.TO": 17500, "XBB.TO": 5000}
     PERSONAS = {
@@ -255,18 +257,13 @@ if __name__ == "__main__":
     seul = analyser({"NVDA": 1000})
     attendu = prix_cad()["NVDA"].dropna().pct_change().dropna().std() * np.sqrt(JOURS_PAR_AN)
     assert abs(seul["volatilite"] - attendu) < 1e-9, "un seul titre doit avoir la volatilité du titre"
-    assert set(m) - {"hypotheses"} == set(faux.analyser(DEMO)), "les clés doivent être celles de faux.analyser"
+    assert set(m) - {"hypotheses"} == CLES_CONTRAT, "les clés doivent être celles du contrat"
     assert all(isinstance(v, float) for v in (m["volatilite"], m["perte_max"], m["capital"]))
     try:
         analyser({"NVDA": 1000, "PLTR": 1000})
     except ValueError as e:
         print("Symbole non couvert bien signalé :", e)
     print("OK : contributions = 1, un seul titre = sa volatilité, clés du contrat, nombres Python simples.")
-
-    print("\n=== Comparaison avec faux.py sur la démo ===")
-    f = faux.analyser(DEMO)
-    print(f"volatilité : vraie {pct(m['volatilite'])} contre fausse {pct(f['volatilite'])}")
-    print(f"perte max  : vraie {pct(m['perte_max'])} contre fausse {pct(f['perte_max'])}")
 
     print("\n=== Portefeuilles de référence (pour calibrer les cibles de la piste B) ===")
     REFERENCES = {

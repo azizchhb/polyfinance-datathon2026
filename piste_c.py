@@ -27,12 +27,9 @@ from botocore.exceptions import BotoCoreError, ClientError
 import donnees
 from piste_b import dollars, evaluer, pct, proposer_scenarios, simuler
 
-try:  # la vraie piste A quand elle existe, sinon les chiffres inventés de faux.py
-    from piste_a import analyser
-    SOURCE_MESURES = "piste_a"
-except ImportError:
-    from faux import analyser
-    SOURCE_MESURES = "faux"
+from piste_a import analyser  # mesures sur les vraies données (S3, copie locale du dépôt en secours)
+
+SOURCE_MESURES = "piste_a, jeu de départ du datathon (cours ajustés quotidiens convertis en dollars canadiens)"
 
 # ------------------------------------------------------------------ réglages
 REGION = boto3.session.Session().region_name or "us-east-1"
@@ -582,8 +579,6 @@ def demander(texte, portefeuille, profil, historique=None):
         limites += analyser(portefeuille).get("hypotheses", [])
     except Exception as e:
         limites.append(f"Les mesures du portefeuille n'ont pas pu être calculées : {e}")
-    if SOURCE_MESURES == "faux":
-        limites.append("Mesures issues de faux.py (chiffres inventés) : la piste A n'est pas encore branchée.")
     limites = list(dict.fromkeys(limites))
     journaliser("reponse", duree_s=round(time.time() - debut, 1), outils=len(trace), corrections=corrections)
     return {"reponse": reponse, "outils_appeles": trace, "limites": limites}

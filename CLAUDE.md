@@ -64,8 +64,8 @@ Quatre pistes en parallèle :
 
 ## Les données : le dossier `alphaforge_starter`
 
-On utilise le jeu de départ fourni par les organisateurs, copié dans `alphaforge_starter/` à la racine
-du dépôt et déposé sur S3 sous `s3://alphaforge-<compte>-donnees/alphaforge_starter/` (voir `donnees.py`).
+On utilise le jeu de départ fourni par les organisateurs, copié dans `data/alphaforge_starter/`
+et déposé sur S3 sous `s3://alphaforge-<compte>-donnees/alphaforge_starter/` (voir `donnees.py`).
 Ce sont déjà des données Yahoo Finance (téléchargées avec `yfinance` le 13 novembre 2026), plus
 la Banque du Canada et FRED. **Ne pas rappeler Yahoo en direct** : les valeurs de `adj_close`
 changent à chaque téléchargement, donc les résultats ne seraient plus reproductibles. Pour ajouter
@@ -161,7 +161,7 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   L'interface affiche `outils_appeles` dans un volet « Ce que l'agent a fait » : c'est la
   preuve visible de l'explicabilité.
 
-Lire `piste_b.py` et `faux.py` pour les formats exacts.
+Lire `piste_a.py` et `piste_b.py` pour les formats exacts.
 
 ## Piste A · Calculs : ce qu'il faut faire
 
@@ -169,7 +169,7 @@ Un fichier `piste_a.py` qui expose `analyser(portefeuille)` et lit les données 
 (S3, copie locale en secours). État : **écrit**. Le moteur de calcul du collègue (classe
 `PisteACalculations`) est conservé ; `analyser` l'enveloppe pour respecter le contrat. Les
 vérifications ci-dessous et les trois portefeuilles de référence se lancent avec `python piste_a.py`.
-`faux.py` reste le secours si `piste_a` ne s'importe pas.
+`tests/faux.py` garde une fausse piste A, aux chiffres inventés, pour tester l'interface sans données.
 
 1. Charger `prices_daily.csv` et garder `adj_close` par date et par symbole.
 2. Convertir les actifs en USD vers le CAD avec `fx_usdcad_daily.csv` (dernier taux reporté les
@@ -265,8 +265,8 @@ Un fichier `piste_c.py` qui expose `demander`. À l'intérieur :
   l'agent) et `/aws/lambda/alphaforge-outils` (un JSON par appel d'outil).
 - Rôle de chaque service dans l'application : **Bedrock** fait tourner l'agent ; **Lambda** exécute
   ses quatre outils avec le code des pistes A et B (pandas et numpy viennent de la couche AWS
-  « AWSSDKPandas », déploiement par `python deployer_lambda.py`, à relancer après toute modification
-  de `piste_a.py`, `piste_b.py`, `donnees.py` ou `lambda_outils.py`) ; **S3** fournit les données ;
+  « AWSSDKPandas », déploiement par `python aws/deployer_lambda.py`, à relancer après toute modification
+  de `piste_a.py`, `piste_b.py`, `donnees.py` ou `aws/lambda_outils.py`) ; **S3** fournit les données ;
   **CloudWatch** garde les traces. Si Lambda est injoignable, l'agent calcule en local et le dit dans
   `limites` ; `OUTILS_LAMBDA=0` force le calcul local. Les onglets Diagnostic et Scénarios de
   l'interface calculent en local avec le même code, pour réagir sans attente aux réglages du profil.
@@ -279,20 +279,23 @@ Un fichier `piste_c.py` qui expose `demander`. À l'intérieur :
 - Ce fichier est régénéré de temps en temps hors du dépôt : **repartir toujours de la version dans Git**,
   sinon les mises à jour d'état des autres pistes sont perdues.
 
-## Fichiers de ce dossier
+## Organisation du dépôt
 
-- `piste_a.py` : mesures du portefeuille à partir des vraies données (moteur du collègue + `analyser`).
-- `piste_b.py` : profil, score, alertes, scénarios. Testé : redonne 97, 64 et 30 sur l'exemple du guide.
-- `piste_c.py` : l'agent (boucle Converse, quatre outils, gouvernance, trace). Démo : `python piste_c.py`.
-- `donnees.py` : lecture des données depuis S3 avec cache local, et téléversement.
-- `lambda_outils.py` : point d'entrée de la fonction Lambda `alphaforge-outils` (les quatre outils).
-- `deployer_lambda.py` : empaquette et déploie la fonction, puis fait un test de fumée.
-- `faux.py` : fausse piste A de secours (sa fausse piste C n'est plus utilisée).
+À la racine, seulement le code de l'application (tous les scripts se lancent depuis la racine) :
+
 - `app.py` : interface Streamlit. Lancer avec `python -m streamlit run app.py`. Passe l'historique du chat à `demander`.
-- `preuves_aws/` : les trois preuves (Bedrock, S3, Lambda + CloudWatch), relançables.
-- `documentation_piste_c.md` : paragraphe d'architecture et capture de trace pour la piste D.
-- `index.html`, `styles.css` : maquette du guide de la piste A, venue de la branche `PARTIE-A`. Pas du code
-  de l'application : à déplacer dans `docs/` ou à retirer.
+- `piste_a.py` : mesures du portefeuille à partir des vraies données (moteur du collègue + `analyser`). `python piste_a.py` : vérifications.
+- `piste_b.py` : profil, score, alertes, scénarios. Testé : redonne 97, 64 et 30 sur l'exemple du guide.
+- `piste_c.py` : l'agent (boucle Converse, quatre outils sur Lambda, gouvernance, trace). Démo : `python piste_c.py`.
+- `donnees.py` : lecture des données depuis S3 avec cache local, et téléversement.
+- `README.md` : présentation courte et commandes de lancement.
+
+Dossiers :
+
+- `aws/` : `deployer_lambda.py` et `lambda_outils.py` (la fonction `alphaforge-outils`), `preuves/` (les trois preuves Bedrock, S3, Lambda, relançables).
+- `data/alphaforge_starter/` : le jeu de départ. `Claude outputs/` à l'intérieur est ignoré par Git.
+- `docs/` : `documentation_piste_c.md` (architecture et traces pour la piste D), `guide_piste_a/` (maquette HTML du guide de la piste A).
+- `tests/` : `faux.py`, fausse piste A aux chiffres inventés pour tester l'interface sans données.
 
 ## Documents de référence
 

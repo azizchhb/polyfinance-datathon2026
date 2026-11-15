@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from piste_b import evaluer, proposer_scenarios
-# Pour revenir aux chiffres inventés le temps d'un test : from faux import analyser
+# Pour tester l'interface sans données, remplacer la ligne suivante par : from tests.faux import analyser
 from piste_a import analyser
 from piste_c import demander
 

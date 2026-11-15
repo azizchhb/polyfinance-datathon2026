@@ -1,7 +1,7 @@
 """Déploie les outils de calcul sur AWS Lambda : fonction alphaforge-outils.
 
-Lancer :  python deployer_lambda.py
-À relancer après toute modification de piste_a.py, piste_b.py, donnees.py ou lambda_outils.py.
+Lancer, depuis la racine du dépôt :  python aws/deployer_lambda.py
+À relancer après toute modification de piste_a.py, piste_b.py, donnees.py ou aws/lambda_outils.py.
 
 Ce que fait le script, et pourquoi :
 1. Le rôle IAM alphaforge-lambda-role (créé par la preuve 3) reçoit le droit de lire le seau S3
@@ -27,13 +27,19 @@ sys.stdout.reconfigure(encoding="utf-8")
 import boto3
 from botocore.exceptions import ClientError
 
-import donnees
+RACINE = Path(__file__).resolve().parent.parent  # le dépôt : les pistes A et B et donnees.py y sont
+sys.path.insert(0, str(RACINE))
+import donnees  # noqa: E402
 
 REGION = boto3.session.Session().region_name or "us-east-1"
 NOM_FONCTION = "alphaforge-outils"
 NOM_ROLE = "alphaforge-lambda-role"
 RUNTIME = "python3.12"
-FICHIERS = ["lambda_outils.py", "piste_a.py", "piste_b.py", "donnees.py"]
+# nom dans le zip -> fichier source ; dans le zip tout est à plat, d'où les imports simples du handler
+FICHIERS = {"lambda_outils.py": Path(__file__).with_name("lambda_outils.py"),
+            "piste_a.py": RACINE / "piste_a.py",
+            "piste_b.py": RACINE / "piste_b.py",
+            "donnees.py": RACINE / "donnees.py"}
 # Couche publique d'AWS avec pandas, numpy et pyarrow (compte AWS 336392948345 = AWS SDK for pandas)
 COUCHE_PANDAS = f"arn:aws:lambda:{REGION}:336392948345:layer:AWSSDKPandas-Python312"
 POLITIQUE_DE_CONFIANCE = {"Version": "2012-10-17", "Statement": [{
@@ -90,8 +96,8 @@ def couche_pandas_arn():
 def empaqueter():
     tampon = io.BytesIO()
     with zipfile.ZipFile(tampon, "w", zipfile.ZIP_DEFLATED) as z:
-        for nom in FICHIERS:
-            z.write(Path(__file__).with_name(nom), nom)
+        for nom, chemin in FICHIERS.items():
+            z.write(chemin, nom)
     octets = tampon.getvalue()
     print(f"Code empaqueté : {len(octets):,} octets ({', '.join(FICHIERS)})".replace(",", " "))
     return octets
