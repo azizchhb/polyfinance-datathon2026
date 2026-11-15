@@ -3,7 +3,7 @@
 Deux écrans dans une seule application :
 1. le questionnaire, plein écran : le profil, puis le portefeuille ;
 2. les résultats, une longue page où rien n'est caché : verdict, notes, graphique, alertes,
-   un portefeuille trois verdicts, scénarios, hypothèses, et la discussion avec l'agent en bas.
+   scénarios, hypothèses, et la discussion avec l'agent en bas.
 L'interface ne calcule rien : elle appelle analyser (piste A), evaluer et proposer_scenarios
 (piste B), demander (piste C), et affiche ce qu'elles renvoient.
 """
@@ -591,24 +591,6 @@ def resultats():
         st.success("Aucune alerte pour ce profil.")
     for alerte in resultat["alertes"]:
         (st.error if alerte["gravite"] == "contrainte" else st.warning)(md(alerte["message"]))
-
-    # ---- un portefeuille, trois verdicts
-    st.header("Un portefeuille, trois verdicts", divider="gray")
-    st.caption("Le même portefeuille, mesuré une seule fois, comparé aux cibles de chaque persona.")
-    for colonne, (nom, profil_persona) in zip(st.columns(3), PERSONAS.items()):
-        r = evaluer(mesures, profil_persona)
-        with colonne.container(border=True):
-            st.subheader(nom)
-            st.caption(PORTRAITS[nom])
-            st.metric("Score", f"{r['score']} / 100")
-            bandeau_verdict(r["verdict"])
-            st.caption(" · ".join(f"{NOMS_NOTES[n['nom']]} {n['note']}" for n in r["notes"]))
-            if r["alertes"]:
-                st.write(md(r["alertes"][0]["message"]))
-                if len(r["alertes"]) > 1:
-                    st.caption(f"Et {len(r['alertes']) - 1} autre(s) alerte(s).")
-            else:
-                st.write("Aucune alerte.")
 
     # ---- scénarios
     st.header("Scénarios fictifs", divider="gray")
