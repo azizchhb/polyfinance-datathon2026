@@ -25,7 +25,8 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 import donnees
-from piste_b import cible, dollars, evaluer, niveau_effectif, pct, proposer_scenarios, rendement_requis, simuler
+from piste_b import (appliquer, cible, dollars, evaluer, niveau_effectif, pct, proposer_scenarios,
+                     rendement_requis, simuler)
 
 from piste_a import analyser  # mesures sur les vraies données (S3, copie locale du dépôt en secours)
 
@@ -133,6 +134,12 @@ Trois types de demandes :
 - Diagnostic (« suis-je trop concentrée ? ») : appelle evaluer, puis explique les quatre notes (dont la résistance à la crise de 2022) et les alertes.
 - Scénario (« je veux ajouter 15 000 $ de X ») : reformule d'abord ce que tu as compris (type de
   changement, titre, montant), appelle simuler, puis présente avant et après.
+- Scénario en plusieurs morceaux (« vendre X pour mettre l'argent dans Y et Z ») : UN seul appel simuler de
+  type combiner, avec une étape deplacer par titre qui reçoit (symbole = titre réduit, vers = titre qui
+  reçoit, montant). Si la répartition entre plusieurs titres n'est pas précisée, prends des parts égales et
+  dis-le dans ta reformulation. Ne calcule jamais de poids : donne des montants, le code fait le reste.
+  Pour décrire ces changements, écris « déplacer », « réduire », « retirer » ou « ajouter », jamais
+  « vendre » ou « acheter », même en reprenant les mots de la personne.
 - Explication (« d'où vient ce chiffre ? ») : appelle evaluer et explique la mesure, sa cible et son hypothèse.
 - Objectif chiffré (« je veux 75 000 $ dans 10 ans ») : appelle evaluer avec montant_vise, et cotisation_mensuelle
   si elle est donnée. L'outil renvoie le rendement annuel requis et le seuil retenu pour le profil : présente-les
@@ -192,18 +199,29 @@ OUTILS = [
         "name": "simuler",
         "description": "Calcule un scénario fictif et compare avant et après : score, notes, alertes levées "
                        "ou nouvelles, ce qui s'améliore et ce qui se dégrade. Types : « ajouter » (argent "
-                       "nouveau sur un titre, le total augmente), « plafonner » (ramener un titre à un poids "
-                       "maximal, le montant libéré réparti au prorata sur les autres lignes), « retirer » "
-                       "(sortir un titre, montant réparti au prorata).",
+                       "nouveau sur un titre, le total augmente), « deplacer » (vendre un montant d'un titre "
+                       "détenu et le mettre dans un autre, total inchangé ; sans montant, toute la ligne), "
+                       "« plafonner » (ramener un titre à un poids maximal), « retirer » (sortir un titre). "
+                       "Pour plafonner et retirer, le montant libéré va dans « vers » s'il est donné, sinon il "
+                       "est réparti au prorata des autres lignes. « combiner » : plusieurs de ces changements "
+                       "appliqués dans l'ordre et évalués ensemble, une seule fois ; c'est le bon type pour une "
+                       "demande en plusieurs morceaux (vendre X pour acheter Y et Z).",
         "inputSchema": {"json": {
             "type": "object",
             "properties": {
-                "type": {"type": "string", "enum": ["ajouter", "plafonner", "retirer"]},
-                "symbole": {"type": "string", "description": "Symbole boursier de l'univers couvert, ex. NVDA ou XIU.TO"},
-                "montant": {"type": "number", "description": "Pour « ajouter » : montant en dollars canadiens"},
-                "poids_max": {"type": "number", "description": "Pour « plafonner » : poids maximal en décimal, "
-                                                               "ex. 0.10 pour 10 %"}},
-            "required": ["type", "symbole"]}}}},
+                "type": {"type": "string", "enum": ["ajouter", "deplacer", "plafonner", "retirer", "combiner"]},
+                "symbole": {"type": "string", "description": "Titre concerné (pour deplacer : le titre vendu). "
+                                                             "Symbole de l'univers couvert, ex. NVDA ou XIU.TO"},
+                "vers": {"type": "string", "description": "Pour deplacer, plafonner, retirer : le titre qui reçoit "
+                                                          "le montant libéré"},
+                "montant": {"type": "number", "description": "Pour ajouter ou deplacer : montant en dollars canadiens"},
+                "poids_max": {"type": "number", "description": "Pour plafonner : poids maximal en décimal, "
+                                                               "ex. 0.10 pour 10 %"},
+                "etapes": {"type": "array", "description": "Pour combiner : la liste ordonnée des changements, "
+                                                           "chacun avec les mêmes champs (type, symbole, vers, "
+                                                           "montant, poids_max), sans combiner imbriqué",
+                           "items": {"type": "object"}}},
+            "required": ["type"]}}}},
     {"toolSpec": {
         "name": "proposer_scenarios",
         "description": "Propose jusqu'à trois scénarios fictifs qui rapprochent le portefeuille des cibles du "
@@ -236,40 +254,115 @@ def symboles_non_couverts(symboles):
     return sorted(s for s in symboles if str(s).strip().upper() not in univers)
 
 
-def valider_changement(args, portefeuille, univers=None):
-    """Transforme les arguments du modèle en changement valide pour piste_b.simuler."""
+MAX_ETAPES_DEMANDEES = 6
+
+
+def _verifier_couvert(symbole, univers, action):
+    if univers is not None and symbole not in univers:
+        raise ValueError(f"{symbole} n'est pas couvert par le jeu de données ({len(univers)} actifs) : "
+                         f"{action} ne peut pas être simulé")
+
+
+def _valider_etape(args, portefeuille, univers):
+    """Un changement simple, validé sur le portefeuille tel qu'il est à cette étape.
+
+    « deplacer » n'existe pas dans la piste B : il est traduit ici en plafonner ou retirer avec
+    « vers ». Le poids cible est calculé par le code à partir des montants, jamais par le modèle.
+    Renvoie (changement pour piste_b, libellé lisible pour le volet « Ce que l'agent a fait »).
+    """
     genre = args.get("type")
     symbole = str(args.get("symbole", "")).strip().upper()
-    if genre not in ("ajouter", "plafonner", "retirer"):
+    vers = str(args.get("vers") or "").strip().upper() or None
+    if genre not in ("ajouter", "deplacer", "plafonner", "retirer"):
         raise ValueError(f"type de changement inconnu : {genre}")
     if not symbole:
         raise ValueError("symbole manquant")
+    if vers:
+        if vers == symbole:
+            raise ValueError("le titre réduit et le titre qui reçoit le montant doivent différer")
+        _verifier_couvert(vers, univers, f"le transfert vers {vers}")
+
     if genre == "ajouter":
         montant = float(args.get("montant") or 0)
         if montant <= 0:
             raise ValueError("montant manquant ou négatif pour un ajout")
-        if univers is not None and symbole not in univers:
-            raise ValueError(f"{symbole} n'est pas couvert par le jeu de données ({len(univers)} actifs) : "
-                             "son ajout ne peut pas être simulé")
-        return {"type": "ajouter", "symbole": symbole, "montant": montant}
+        _verifier_couvert(symbole, univers, "son ajout")
+        return {"type": "ajouter", "symbole": symbole, "montant": montant}, \
+            f"ajout de {dollars(montant)} de {symbole}"
+
     if symbole not in portefeuille:
-        raise ValueError(f"{symbole} n'est pas dans le portefeuille")
+        raise ValueError(f"{symbole} n'est pas dans le portefeuille à cette étape")
+    detenu, total = portefeuille[symbole], sum(portefeuille.values())
+
+    if genre == "deplacer":
+        if not vers:
+            raise ValueError("deplacer demande le titre qui reçoit le montant (vers)")
+        montant = float(args.get("montant") or detenu)
+        if montant <= 0:
+            raise ValueError("montant négatif pour un déplacement")
+        montant = min(montant, detenu)
+        libelle = f"{dollars(montant)} de {symbole} déplacés vers {vers}"
+        if montant >= detenu - 0.5:
+            return {"type": "retirer", "symbole": symbole, "vers": vers}, libelle
+        # vers ne change pas le total : le nouveau poids de la ligne vendue se déduit des montants
+        return {"type": "plafonner", "symbole": symbole, "poids_max": (detenu - montant) / total,
+                "vers": vers}, libelle
+
     if genre == "retirer":
-        return {"type": "retirer", "symbole": symbole}
-    poids = float(args.get("poids_max", -1))
-    if poids > 1:
-        poids = poids / 100  # le modèle a donné un pourcentage
-    if not 0 <= poids < 1:
-        raise ValueError("poids_max doit être un décimal entre 0 et 1")
-    return {"type": "plafonner", "symbole": symbole, "poids_max": poids}
+        changement = {"type": "retirer", "symbole": symbole}
+        libelle = f"retrait de {symbole}"
+    else:
+        poids = float(args.get("poids_max", -1))
+        if poids > 1:
+            poids = poids / 100  # le modèle a donné un pourcentage
+        if not 0 <= poids < 1:
+            raise ValueError("poids_max doit être un décimal entre 0 et 1")
+        changement = {"type": "plafonner", "symbole": symbole, "poids_max": poids}
+        libelle = f"plafonnement de {symbole} à {pct(poids)}"
+    if vers:
+        changement["vers"] = vers
+        libelle += f", montant libéré vers {vers}"
+    return changement, libelle
+
+
+def valider_changement(args, portefeuille, univers=None):
+    """Transforme les arguments du modèle en changement valide pour piste_b.simuler.
+
+    Renvoie (changement, libellé). Pour « combiner », chaque étape est validée sur le
+    portefeuille obtenu après les étapes précédentes (piste_b.appliquer).
+    """
+    if args.get("type") != "combiner":
+        return _valider_etape(args, portefeuille, univers)
+    etapes_demandees = args.get("etapes") or []
+    if not isinstance(etapes_demandees, list) or not etapes_demandees:
+        raise ValueError("combiner demande une liste d'étapes non vide")
+    if len(etapes_demandees) > MAX_ETAPES_DEMANDEES:
+        raise ValueError(f"au plus {MAX_ETAPES_DEMANDEES} étapes dans un scénario combiné")
+    etapes, libelles, courant = [], [], dict(portefeuille)
+    for numero, brute in enumerate(etapes_demandees, start=1):
+        if not isinstance(brute, dict) or brute.get("type") == "combiner":
+            raise ValueError(f"étape {numero} invalide (combiner imbriqué ou format inattendu)")
+        try:
+            etape, libelle = _valider_etape(brute, courant, univers)
+        except ValueError as e:
+            raise ValueError(f"étape {numero} : {e}") from None
+        etapes.append(etape)
+        libelles.append(libelle)
+        courant = appliquer(courant, etape)
+    if len(etapes) == 1:
+        return etapes[0], libelles[0]
+    return {"type": "combiner", "etapes": etapes}, " puis ".join(libelles)
 
 
 def resume_changement(c):
+    """Libellé d'un changement déjà au format de piste_b (utilisé quand aucun libellé n'est fourni)."""
+    if c["type"] == "combiner":
+        return " puis ".join(resume_changement(e) for e in c["etapes"])
     if c["type"] == "ajouter":
         return f"ajout de {dollars(c['montant'])} de {c['symbole']}"
-    if c["type"] == "plafonner":
-        return f"plafonnement de {c['symbole']} à {pct(c['poids_max'])}"
-    return f"retrait de {c['symbole']}"
+    texte = (f"plafonnement de {c['symbole']} à {pct(c['poids_max'])}" if c["type"] == "plafonner"
+             else f"retrait de {c['symbole']}")
+    return texte + (f", montant libéré vers {c['vers']}" if c.get("vers") else "")
 
 
 def client_lambda():
@@ -324,7 +417,7 @@ def completer_objectif(resultat, objectif, portefeuille, profil):
     return resultat
 
 
-def resume_outil(nom, r, portefeuille, changement=None):
+def resume_outil(nom, r, portefeuille, changement=None, libelle=None):
     """Une ligne pour le volet « Ce que l'agent a fait »."""
     if nom == "analyser":
         return f"{len(portefeuille)} titres analysés, capital de {dollars(r['capital'])}"
@@ -335,7 +428,7 @@ def resume_outil(nom, r, portefeuille, changement=None):
             texte += f", objectif {dollars(o['montant_vise'])} : {pct(o['rendement_annuel_requis'])} par an requis"
         return texte
     if nom == "simuler":
-        return f"{resume_changement(changement)} : score de {r['avant']['score']} à {r['apres']['score']}"
+        return f"{libelle or resume_changement(changement)} : score de {r['avant']['score']} à {r['apres']['score']}"
     return f"{len(r)} scénario(s) retenu(s)"
 
 
@@ -344,7 +437,8 @@ def executer_outil(nom, args, portefeuille, profil):
     global _lambda_indisponible
     if nom not in ("analyser", "evaluer", "simuler", "proposer_scenarios"):
         raise ValueError(f"outil inconnu : {nom}")
-    changement = valider_changement(args, portefeuille, univers_couvert()) if nom == "simuler" else None
+    changement, libelle = (valider_changement(args, portefeuille, univers_couvert()) if nom == "simuler"
+                           else (None, None))
     objectif = objectif_demande(args) if nom == "evaluer" else None
     profil_outil = {**profil, **objectif} if objectif else profil  # piste_b lit montant_vise et cotisation
 
@@ -359,7 +453,7 @@ def executer_outil(nom, args, portefeuille, profil):
         resultat = executer_localement(nom, portefeuille, profil_outil, changement)
     if objectif:
         resultat = completer_objectif(resultat, objectif, portefeuille, profil)
-    resume = resume_outil(nom, resultat, portefeuille, changement)
+    resume = resume_outil(nom, resultat, portefeuille, changement, libelle)
     if lieu == "AWS Lambda":
         resume += " · calculé sur AWS Lambda"
     return resultat, resume, lieu
