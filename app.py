@@ -14,7 +14,8 @@ import pandas as pd
 import streamlit as st
 
 from piste_a import analyser, symboles_non_couverts, trajectoire_crise_2022, univers
-from piste_b import MARGE_CONFORT, NOTE_LIMITE, appliquer, evaluer, nombre, pct, proposer_scenarios
+from piste_b import (MARGE_CONFORT, NOTE_LIMITE, appliquer, evaluer, nombre, nombre_de_scenarios, pct,
+                     proposer_scenarios)
 from piste_c import demander
 
 AVERTISSEMENT = ("Simulation à but éducatif, à partir de données historiques. "
@@ -773,8 +774,27 @@ def resultats():
     st.caption("Des changements calculés à partir du portefeuille, avec ce qui s'améliore et ce qui se dégrade. "
                "L'outil ne dit jamais quoi faire : la décision vous appartient. " + AVERTISSEMENT)
     scenarios = proposer_scenarios(portefeuille, profil, analyser)
-    if not scenarios:
+    voulu = nombre_de_scenarios(resultat)
+    contrainte = any(a["gravite"] == "contrainte" for a in resultat["alertes"])
+    # Le nombre de scénarios suit le verdict brut du score : on dit pourquoi, pour qu'il ne paraisse pas arbitraire.
+    if voulu == 0:
+        st.success(md(f"Ce portefeuille est déjà dans les cibles de ce profil (score de {resultat['score']} sur 100) : "
+                      "aucun scénario n'est proposé. L'outil rapproche un portefeuille des cibles, il ne cherche pas "
+                      "le portefeuille parfait."))
+    elif not scenarios:
         st.info("Aucun des changements testés ne rapproche ce portefeuille des cibles de ce profil.")
+    else:
+        if voulu == 1 and contrainte:
+            raison = "le score est dans les cibles, mais une contrainte du profil n'est pas respectée"
+        elif voulu == 2:
+            raison = f"le score de {resultat['score']} est proche des cibles (60 à 79)"
+        else:
+            raison = f"le score de {resultat['score']} est loin des cibles (moins de 60)"
+        if len(scenarios) == 1:
+            st.caption(md(f"Un scénario, parce que {raison} : il montre comment s'en rapprocher."))
+        else:
+            st.caption(md(f"{len(scenarios)} scénarios, parce que {raison}. Chacun est une façon différente "
+                          "de se rapprocher des cibles."))
     # Un scénario par ligne, sur toute la largeur : côte à côte, la phrase et les deux listes
     # tombaient dans des colonnes de quelques mots de large.
     for numero, scenario in enumerate(scenarios, start=1):

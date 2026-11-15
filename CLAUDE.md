@@ -176,8 +176,10 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   qui reçoit le montant libéré), `combiner` (`etapes`) et `reallouer` (`poids_cibles`, total inchangé).
 - `proposer_scenarios(portefeuille, profil, analyser)` -> liste d'au plus trois résultats de `simuler`.
   Depuis le 15 novembre : recherche gloutonne de 1 à 6 changements (contraintes d'abord, puis score,
-  puis écart aux cibles), montant libéré envoyé vers un FNB large ou l'or ; trois variantes (complète,
-  autres destinations, légère en deux changements), présentées comme une réallocation finale.
+  puis écart aux cibles), montant libéré envoyé vers un FNB large ou l'or, présentés comme une réallocation
+  finale. Nombre de scénarios fixé par `nombre_de_scenarios(evaluation)` : 3 si inadéquat (score < 60), 2 si
+  à surveiller (60 à 79), 0 si adéquat (80 et plus), 1 si adéquat mais avec une contrainte violée. Des
+  recherches de rechange comblent les doublons (deux scénarios menant au même portefeuille comptent pour un).
 - **`demander(texte, portefeuille, profil)`**, livré par la piste C :
   ```json
   {"reponse": "texte affiché dans le chat",

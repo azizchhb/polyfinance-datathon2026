@@ -603,27 +603,71 @@ def _scenario(portefeuille, etapes, profil, analyser):
     return resultat if resultat["apres"]["score"] > resultat["avant"]["score"] or levees else None
 
 
+def nombre_de_scenarios(evaluation):
+    """Combien de scénarios proposer, selon le verdict brut du score (seuils de verdict()) :
+      - inadéquat (moins de 60) : 3, plusieurs façons de se rapprocher des cibles ;
+      - à surveiller (60 à 79) : 2 ;
+      - adéquat (80 et plus) : 0, le portefeuille est déjà dans les cibles ; 1 seulement si une
+        contrainte du profil est violée (secteur exclu, crypto refusée), pour montrer comment la lever.
+    On ne cherche pas le portefeuille parfait : au-delà des cibles, ce serait de l'optimisation."""
+    v = verdict(evaluation["score"])
+    if v == "inadequat":
+        return 3
+    if v == "a_surveiller":
+        return 2
+    return 1 if _contraintes(evaluation) else 0
+
+
 def proposer_scenarios(portefeuille, profil, analyser, maximum=3):
-    """Jusqu'à trois scénarios contrastés :
+    """Jusqu'à nombre_de_scenarios() scénarios distincts (au plus `maximum`), essayés dans l'ordre :
       1. le plus complet (jusqu'à six étapes de recherche, toutes destinations) ;
       2. une variante qui n'utilise pas les destinations du premier ;
-      3. une version légère (deux étapes, hors retrait des contraintes)."""
-    essais = []
-    premier = _chemin(portefeuille, profil, analyser, MAX_ETAPES)
-    essais.append(premier)
-    utilisees = {e.get("vers") for e in premier}
-    autres = [d for d in DESTINATIONS if d not in utilisees]
-    if autres:
-        essais.append(_chemin(portefeuille, profil, analyser, MAX_ETAPES, autres))
-    essais.append(_chemin(portefeuille, profil, analyser, ETAPES_LEGER))
+      3. une version légère (deux étapes, hors retrait des contraintes) ;
+    puis, seulement s'il en manque (doublons, scénarios sans effet), des recherches de rechange :
+    une deuxième variante, une version en trois étapes, obligations seules, actions larges seules,
+    et la répartition au prorata. Deux scénarios qui mènent au même portefeuille comptent pour un."""
+    voulu = min(maximum, nombre_de_scenarios(evaluer(analyser(portefeuille), profil)))
+    if voulu == 0:
+        return []
+    utilisees = set()
 
-    scenarios, vus = [], []
-    for etapes in essais:
-        if not etapes or etapes in vus:
+    def complete():
+        etapes = _chemin(portefeuille, profil, analyser, MAX_ETAPES)
+        utilisees.update(e.get("vers") for e in etapes)
+        return etapes
+
+    def variante():
+        autres = [d for d in DESTINATIONS if d not in utilisees]
+        if not autres:
+            return []
+        etapes = _chemin(portefeuille, profil, analyser, MAX_ETAPES, autres)
+        utilisees.update(e.get("vers") for e in etapes)
+        return etapes
+
+    recherches = [
+        complete,
+        variante,
+        lambda: _chemin(portefeuille, profil, analyser, ETAPES_LEGER),
+        variante,
+        lambda: _chemin(portefeuille, profil, analyser, ETAPES_LEGER + 1),
+        lambda: _chemin(portefeuille, profil, analyser, MAX_ETAPES, ["XBB.TO", "ZST.TO", "AGG"]),
+        lambda: _chemin(portefeuille, profil, analyser, MAX_ETAPES, ["XIU.TO", "SPY", "ESGV"]),
+        lambda: _chemin(portefeuille, profil, analyser, MAX_ETAPES, []),
+    ]
+    scenarios, finaux = [], []
+    for recherche in recherches:
+        etapes = recherche()
+        if not etapes:
             continue
-        vus.append(etapes)
         resultat = _scenario(portefeuille, etapes, profil, analyser)
-        if resultat:
-            scenarios.append(resultat)
+        if not resultat:
+            continue
+        final = {s: round(w, 2) for s, w in resultat["poids_apres"].items() if round(w, 2) > 0}
+        if final in finaux:
+            continue
+        finaux.append(final)
+        scenarios.append(resultat)
+        if len(scenarios) == voulu:
+            break
     scenarios.sort(key=lambda r: r["apres"]["score"], reverse=True)
-    return scenarios[:maximum]
+    return scenarios
