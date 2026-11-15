@@ -32,11 +32,20 @@ CIBLES = {
     "secteur_max":   [0.30, 0.35, 0.45],
     "crypto_max":    [0.00, 0.05, 0.10],
     "rendement_max": [0.04, 0.06, 0.08],
+    # Pire baisse tolérée pendant la crise de 2022. Repères (en CAD) : 20/80 et 60/40 ont
+    # perdu environ 14 %, 100 % actions 15,6 %, ZST.TO 0,4 % (python piste_a.py).
+    "crise_max":     [0.12, 0.20, 0.35],
 }
 POIDS = {  # (niveau de risque, risque de perte, diversification)
     "preservation": (0.25, 0.45, 0.30),
     "equilibre":    (0.35, 0.30, 0.35),
     "croissance":   (0.35, 0.20, 0.45),
+}
+# Avec la quatrième note (résistance à la crise de 2022), quand la piste A la fournit.
+POIDS_AVEC_CRISE = {  # (niveau de risque, risque de perte, diversification, crise de 2022)
+    "preservation": (0.20, 0.30, 0.25, 0.25),
+    "equilibre":    (0.30, 0.20, 0.30, 0.20),
+    "croissance":   (0.30, 0.15, 0.40, 0.15),
 }
 # FNB d'indice général (actions ou obligations) : traités comme déjà diversifiés.
 # Pas QQQ (concentré techno), pas TLT (pari sur les taux longs), pas GLD (or).
@@ -237,9 +246,20 @@ def evaluer(mesures, profil):
     n1 = round(note_plage(vol, a, b, penaliser_bas=objectif != "preservation"))
     n2 = round(note_plafond(perte, limite))
     n3 = round(note_plancher(paris, minimum))
-    w1, w2, w3 = POIDS[objectif]
-    score = round(w1 * n1 + w2 * n2 + w3 * n3)
-    hypotheses.append(f"Poids des notes pour l'objectif {objectif} : {nombre(w1)}, {nombre(w2)}, {nombre(w3)} (choix de l'équipe).")
+    crise = mesures.get("perte_crise_2022")
+    if crise is None:  # mesures sans la crise (fausse piste A, anciennes versions) : trois notes
+        w1, w2, w3 = POIDS[objectif]
+        score = round(w1 * n1 + w2 * n2 + w3 * n3)
+        hypotheses.append(f"Poids des notes pour l'objectif {objectif} : {nombre(w1)}, {nombre(w2)}, {nombre(w3)} (choix de l'équipe).")
+    else:
+        limite_crise = cible("crise_max", n)
+        n4 = round(note_plafond(crise, limite_crise))
+        w1, w2, w3, w4 = POIDS_AVEC_CRISE[objectif]
+        score = round(w1 * n1 + w2 * n2 + w3 * n3 + w4 * n4)
+        hypotheses.append(f"Poids des notes pour l'objectif {objectif} : {nombre(w1)}, {nombre(w2)}, {nombre(w3)}, "
+                          f"{nombre(w4)} (choix de l'équipe).")
+        hypotheses.append(f"Perte tolérée pendant la crise de 2022 pour le niveau {nombre(n)} : {pct(limite_crise)} "
+                          "(choix de l'équipe, repère : un portefeuille 60/40 a perdu environ 14 % en 2022).")
 
     if vol > b:
         e1 = f"Volatilité de {pct(vol)}, au-dessus de la plage cible de {pct(a)} à {pct(b)}."
@@ -257,6 +277,15 @@ def evaluer(mesures, profil):
         {"nom": "risque_de_perte", "valeur": perte, "cible": limite, "note": n2, "poids": w2, "explication": e2},
         {"nom": "diversification", "valeur": round(paris, 2), "cible": minimum, "note": n3, "poids": w3, "explication": e3},
     ]
+    if crise is not None:
+        position = "au-dessus de" if crise > limite_crise else "dans"
+        e4 = f"Pire baisse de {pct(crise)} pendant la crise de 2022, {position} la limite de {pct(limite_crise)}."
+        par_titre = mesures.get("perte_crise_2022_par_titre") or {}
+        if len(par_titre) > 1:
+            pire = max(par_titre, key=par_titre.get)
+            e4 += f" Titre le plus touché : {pire} ({pct(par_titre[pire])} de baisse)."
+        notes.append({"nom": "resistance_crise", "valeur": crise, "cible": limite_crise, "note": n4,
+                      "poids": w4, "explication": e4})
     return {
         "score": score,
         "verdict": verdict(score),
@@ -449,7 +478,7 @@ def _ecart(evaluation):
         v, c = n["valeur"], n["cible"]
         if n["nom"] == "niveau_de_risque":
             total += max(0.0, v - c[1]) / c[1]
-        elif n["nom"] == "risque_de_perte":
+        elif n["nom"] in ("risque_de_perte", "resistance_crise"):
             total += max(0.0, v - c) / c
         else:
             total += max(0.0, c - v) / c

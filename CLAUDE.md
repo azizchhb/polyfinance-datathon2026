@@ -159,7 +159,11 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   que `piste_c` reprend automatiquement dans `limites`, et depuis le 15 novembre le gain de
   diversification de Markowitz : `volatilite_par_titre`, `volatilite_sans_diversification` (moyenne
   pondérée des volatilités), `gain_diversification` (écart, en décimal) et `ratio_diversification`.
-  Aucun rendement espéré n'intervient ; l'interface l'affiche dans l'onglet « Gain de diversification ». Un symbole hors des 31 actifs fait lever
+  Aucun rendement espéré n'intervient ; l'interface l'affiche dans l'onglet « Gain de diversification ».
+  Aussi depuis le 15 novembre, la résistance à la crise de 2022 (portefeuille rejoué sur l'année 2022) :
+  `perte_crise_2022` (pire baisse pendant 2022), `variation_2022`, `perte_crise_2022_par_titre`. `evaluer`
+  en fait une quatrième note, `resistance_crise` (cible `crise_max` : 12 %, 20 %, 35 % selon le niveau,
+  poids dans `POIDS_AVEC_CRISE`) ; sans ces clés (fausse piste A), il garde les trois notes et les anciens poids. Un symbole hors des 31 actifs fait lever
   `ValueError` avec la liste des symboles non couverts ; `piste_a.symboles_non_couverts(portefeuille)`
   permet de les afficher avant d'appeler `analyser`.
 - `evaluer(mesures, profil)` -> `score` (0 à 100), `verdict`, `niveau_effectif`, `notes` (trois notes

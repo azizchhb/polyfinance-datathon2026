@@ -29,7 +29,8 @@ SECTEURS = ["technologie", "energie", "finance", "sante", "industrie", "services
 VERDICTS = {"adequat": "Adéquat", "a_surveiller": "À surveiller", "inadequat": "Inadéquat"}
 NOMS_NOTES = {"niveau_de_risque": "Niveau de risque",
               "risque_de_perte": "Risque de perte",
-              "diversification": "Diversification"}
+              "diversification": "Diversification",
+              "resistance_crise": "Résistance à la crise de 2022"}
 # Deux premières couleurs de la palette catégorielle validée (paire sûre pour le daltonisme),
 # avec leurs pas pour fond sombre. Les textes ne portent jamais la couleur des séries.
 COULEURS = {"clair": ["#2a78d6", "#eb6834"], "sombre": ["#3987e5", "#d95926"]}
@@ -526,7 +527,7 @@ def resultats():
             st.caption(f"Niveau de risque retenu : {nombre(resultat['niveau_effectif'])} sur 3, "
                        f"objectif {etiquette(OBJECTIFS, profil['objectif']).lower()}, "
                        f"capital de {dollars(mesures['capital'])}.")
-    for colonne, note in zip(st.columns(3), resultat["notes"]):
+    for colonne, note in zip(st.columns(len(resultat["notes"])), resultat["notes"]):
         with colonne.container(border=True):
             st.metric(NOMS_NOTES[note["nom"]], f"{note['note']} / 100")
             st.progress(int(note["note"]))

@@ -130,7 +130,7 @@ Règles absolues :
 5. Simulation seulement : aucune transaction réelle, aucune donnée bancaire.
 
 Trois types de demandes :
-- Diagnostic (« suis-je trop concentrée ? ») : appelle evaluer, puis explique les trois notes et les alertes.
+- Diagnostic (« suis-je trop concentrée ? ») : appelle evaluer, puis explique les quatre notes (dont la résistance à la crise de 2022) et les alertes.
 - Scénario (« je veux ajouter 15 000 $ de X ») : reformule d'abord ce que tu as compris (type de
   changement, titre, montant), appelle simuler, puis présente avant et après.
 - Explication (« d'où vient ce chiffre ? ») : appelle evaluer et explique la mesure, sa cible et son hypothèse.
@@ -175,7 +175,8 @@ OUTILS = [
     {"toolSpec": {
         "name": "evaluer",
         "description": "Compare les mesures du portefeuille aux cibles du profil : score de 0 à 100, "
-                       "verdict, trois notes (niveau_de_risque, risque_de_perte, diversification) avec "
+                       "verdict, quatre notes (niveau_de_risque, risque_de_perte, diversification, "
+                       "resistance_crise : pire baisse pendant la crise de 2022) avec "
                        "valeur, cible et explication, alertes (contrainte ou avertissement) et hypothèses. "
                        "Paramètres facultatifs, seulement si la personne exprime un objectif chiffré : "
                        "montant_vise et cotisation_mensuelle ; le résultat contient alors « objectif » avec "

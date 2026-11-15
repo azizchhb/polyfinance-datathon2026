@@ -156,6 +156,33 @@ def _provenance_donnees():
     return "Données lues depuis la copie locale du dépôt (S3 injoignable)."
 
 
+CRISE = ("2022-01-01", "2022-12-31")  # seule crise couverte : le jeu commence en novembre 2021
+
+
+def _pire_baisse(valeurs):
+    """Pire baisse du sommet au creux d'une série de valeurs, en nombre positif."""
+    valeurs = np.asarray(valeurs, dtype=float)
+    return float(1 - (valeurs / np.maximum.accumulate(valeurs)).min())
+
+
+def crise_2022(rendements, poids):
+    """Le portefeuille rejoué sur l'année 2022, à pondérations constantes.
+
+    2022 : hausse rapide des taux, actions et obligations en baisse ensemble. Renvoie la pire
+    baisse du portefeuille pendant l'année, sa variation du premier au dernier jour, et la pire
+    baisse de chaque titre sur la même période. None si le portefeuille n'a pas de prix en 2022.
+    """
+    r = rendements.loc[CRISE[0]:CRISE[1]]
+    if len(r) < 20:
+        return None
+    valeur = np.cumprod(1 + r.values @ poids)
+    par_titre = {s: _pire_baisse(np.cumprod(1 + r[s].values)) for s in r.columns}
+    return {"perte": _pire_baisse(np.concatenate([[1.0], valeur])),
+            "variation": float(valeur[-1] - 1),
+            "par_titre": par_titre,
+            "debut": str(r.index[0].date()), "fin": str(r.index[-1].date())}
+
+
 def analyser(portefeuille):
     """Mesure le portefeuille (symbole -> montant en CAD) et renvoie les mesures du contrat.
 
@@ -190,6 +217,8 @@ def analyser(portefeuille):
     contributions = moteur.step_3_risk_contribution()["Pct_Risk_Contrib"]
     perte_max = -moteur.step_4_maximum_drawdown()["max_drawdown"]  # contrat : perte en nombre positif
 
+    crise = crise_2022(moteur.returns_df, poids)
+
     # Gain de diversification (Markowitz, sans rendement espéré) : la volatilité qu'aurait le
     # portefeuille si tous les titres bougeaient ensemble, soit la moyenne pondérée de leurs
     # volatilités, face à la volatilité réelle. L'écart est ce que la diversification efface.
@@ -214,6 +243,9 @@ def analyser(portefeuille):
         "Perte maximale : pire baisse du sommet au creux de la valeur du portefeuille, à pondérations constantes.",
         "Gain de diversification : écart entre la moyenne pondérée des volatilités des titres (si tous "
         "bougeaient ensemble) et la volatilité réelle du portefeuille ; aucun rendement espéré n'intervient.",
+        "Crise de 2022 : le portefeuille actuel rejoué du premier au dernier jour de cotation de 2022, à "
+        "pondérations constantes ; c'est la seule crise couverte (données à partir de novembre 2021), "
+        "ni 2008 ni mars 2020. Une crise future peut toucher d'autres actifs.",
         "Univers de 31 actifs choisi en 2026 parmi des titres devenus gros (biais du survivant). "
         "Aucune composition de FNB, aucune cote ESG, aucune donnée fondamentale.",
         _provenance_donnees(),
@@ -234,6 +266,10 @@ def analyser(portefeuille):
         "volatilite_sans_diversification": vol_sans_diversification,
         "gain_diversification": gain,
         "ratio_diversification": ratio,
+        # Ajout du 15 novembre : résistance à la crise de 2022 (None si aucun prix en 2022).
+        "perte_crise_2022": crise["perte"] if crise else None,
+        "variation_2022": crise["variation"] if crise else None,
+        "perte_crise_2022_par_titre": crise["par_titre"] if crise else {},
         "hypotheses": hypotheses,
     }
 
@@ -251,7 +287,8 @@ if __name__ == "__main__":
     CLES_CONTRAT = {"volatilite", "perte_max", "poids", "contributions", "poids_par_classe",
                     "poids_par_secteur", "classe_par_titre", "secteur_par_titre", "capital"}
     CLES_AJOUTEES = {"hypotheses", "volatilite_par_titre", "volatilite_sans_diversification",
-                     "gain_diversification", "ratio_diversification"}
+                     "gain_diversification", "ratio_diversification",
+                     "perte_crise_2022", "variation_2022", "perte_crise_2022_par_titre"}
 
     DEMO = {"NVDA": 10000, "QQQ": 12500, "BTC-USD": 5000, "XIU.TO": 17500, "XBB.TO": 5000}
     PERSONAS = {
@@ -294,7 +331,8 @@ if __name__ == "__main__":
     }
     for nom, p in REFERENCES.items():
         r = analyser(p)
-        print(f"{nom:<20} volatilité {pct(r['volatilite']):>7}   perte max {pct(r['perte_max']):>7}")
+        print(f"{nom:<20} volatilité {pct(r['volatilite']):>7}   perte max {pct(r['perte_max']):>7}"
+              f"   perte en 2022 {pct(r['perte_crise_2022']):>7}")
 
     print("\n=== Scores des trois personas sur la démo, avec les vraies mesures ===")
     for nom, profil in PERSONAS.items():
