@@ -77,27 +77,52 @@ def cible(nom, niveau):
 
 
 # ------------------------------------------------------------- étape 2 : notes
+# Chaque note a trois repères : 100 avec une marge de confort, 70 pile à la limite du profil,
+# 0 loin au-delà (le double de la limite). Avant, la note valait 100 partout sous la limite :
+# un portefeuille à un cheveu de la limite avait 100, et les notes se lisaient en tout ou rien.
+# 70 à la limite : un portefeuille juste au bord de toutes ses cibles tombe dans « à surveiller »
+# (60 à 79), pas dans « adéquat ». Ces repères sont des choix de l'équipe.
+NOTE_LIMITE = 70.0
+MARGE_CONFORT = 0.25  # plafonds : 100 jusqu'à 75 % de la limite
+
+
+def _descente(x, depart, arrivee, note_depart, note_arrivee):
+    """Droite entre (depart, note_depart) et (arrivee, note_arrivee), bornée à [0, 100]."""
+    t = (x - depart) / (arrivee - depart)
+    return max(0.0, min(100.0, note_depart + t * (note_arrivee - note_depart)))
+
+
+def note_plafond(x, limite):
+    """Pour une perte : 100 jusqu'à 75 % de la limite, 70 à la limite, 0 au double de la limite."""
+    confort = (1 - MARGE_CONFORT) * limite
+    if x <= confort:
+        return 100.0
+    if x <= limite:
+        return _descente(x, confort, limite, 100.0, NOTE_LIMITE)
+    return _descente(x, limite, 2 * limite, NOTE_LIMITE, 0.0)
+
+
 def note_plage(x, a, b, penaliser_bas=True):
-    """100 dans [a, b], baisse en ligne droite de chaque côté. 0 au double de b."""
+    """Volatilité dans la plage [a, b] : 100 jusqu'au milieu de la plage, 70 au bord haut b,
+    0 au double de b. Sous a (si penaliser_bas) : 100 à a, 0 à une volatilité nulle."""
+    milieu = (a + b) / 2
     if x > b:
-        return max(0.0, 100 * (1 - (x - b) / b))
+        return _descente(x, b, 2 * b, NOTE_LIMITE, 0.0)
+    if x > milieu:
+        return _descente(x, milieu, b, 100.0, NOTE_LIMITE)
     if x < a and penaliser_bas:
         return 100 * x / a
     return 100.0
 
 
-def note_plafond(x, limite):
-    """100 sous la limite, puis baisse. 0 au double de la limite."""
-    if x <= limite:
-        return 100.0
-    return max(0.0, 100 * (1 - (x - limite) / limite))
-
-
 def note_plancher(x, minimum):
-    """100 au-dessus du minimum. La droite part de 1 (un seul pari = 0)."""
-    if x >= minimum:
+    """Paris effectifs : 100 dès 1,5 fois le minimum, 70 au minimum, 0 à un seul pari."""
+    confort = (1 + 2 * MARGE_CONFORT) * minimum
+    if x >= confort:
         return 100.0
-    return max(0.0, 100 * (x - 1) / (minimum - 1))
+    if x >= minimum:
+        return _descente(x, minimum, confort, NOTE_LIMITE, 100.0)
+    return _descente(x, 1, minimum, 0.0, NOTE_LIMITE)
 
 
 def paris_ajustes(contributions):
@@ -265,9 +290,12 @@ def evaluer(mesures, profil):
         e1 = f"Volatilité de {pct(vol)}, au-dessus de la plage cible de {pct(a)} à {pct(b)}."
     elif vol < a:
         e1 = f"Volatilité de {pct(vol)}, sous la plage cible de {pct(a)} à {pct(b)}."
+    elif vol > (a + b) / 2:
+        e1 = f"Volatilité de {pct(vol)}, dans la moitié haute de la plage cible de {pct(a)} à {pct(b)}."
     else:
         e1 = f"Volatilité de {pct(vol)}, dans la plage cible de {pct(a)} à {pct(b)}."
-    position = "au-dessus de" if perte > limite else "dans"
+    position = ("au-dessus de" if perte > limite else
+                "proche de" if perte > (1 - MARGE_CONFORT) * limite else "dans")
     e2 = f"Perte maximale historique de {pct(perte)}, {position} la limite tolérée de {pct(limite)}."
     position = "sous le" if paris < minimum else "au niveau ou au-dessus du"
     e3 = f"{nombre(paris)} paris effectifs, {position} minimum de {nombre(minimum)}."
@@ -278,7 +306,8 @@ def evaluer(mesures, profil):
         {"nom": "diversification", "valeur": round(paris, 2), "cible": minimum, "note": n3, "poids": w3, "explication": e3},
     ]
     if crise is not None:
-        position = "au-dessus de" if crise > limite_crise else "dans"
+        position = ("au-dessus de" if crise > limite_crise else
+                    "proche de" if crise > (1 - MARGE_CONFORT) * limite_crise else "dans")
         e4 = f"Pire baisse de {pct(crise)} pendant la crise de 2022, {position} la limite de {pct(limite_crise)}."
         par_titre = mesures.get("perte_crise_2022_par_titre") or {}
         if len(par_titre) > 1:

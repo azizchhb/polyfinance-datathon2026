@@ -14,7 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from piste_a import analyser, symboles_non_couverts, univers
-from piste_b import evaluer, nombre, proposer_scenarios
+from piste_b import MARGE_CONFORT, NOTE_LIMITE, evaluer, nombre, pct, proposer_scenarios
 from piste_c import demander
 
 AVERTISSEMENT = ("Simulation à but éducatif, à partir de données historiques. "
@@ -211,6 +211,58 @@ def liste_titres(mesures):
 def etiquette(dico, valeur):
     """Le libellé affiché pour une valeur du contrat (1.5 -> « Faible à modéré »)."""
     return next((e for e, v in dico.items() if v == valeur), next(iter(dico)))
+
+
+def aide_score(resultat, profil):
+    """Texte du « ? » à côté du score : comment il est construit et ce qu'il ne dit pas."""
+    poids = ", ".join(f"{NOMS_NOTES[n['nom']].lower()} {pct(n['poids'])}" for n in resultat["notes"])
+    return (f"**Moyenne pondérée des {len(resultat['notes'])} notes ci-dessous.** Poids pour l'objectif "
+            f"{etiquette(OBJECTIFS, profil['objectif']).lower()} : {poids}.\n\n"
+            "**Verdict** : adéquat à 80 et plus, à surveiller de 60 à 79, inadéquat sous 60. Une contrainte "
+            "non respectée (secteur exclu, crypto refusée) plafonne le verdict à « à surveiller », quel que soit "
+            "le score.\n\n"
+            f"**Repère** : chaque note vaut {nombre(NOTE_LIMITE)} pile à la limite de votre profil. Un portefeuille "
+            "au bord de toutes ses cibles obtient donc environ 70 (à surveiller) ; 100 demande une marge.\n\n"
+            "Le score mesure l'adéquation du risque à votre profil, pas un rendement attendu. Les cibles et les "
+            "poids sont des choix de l'équipe, pas une norme.")
+
+
+def aide_note(note):
+    """Texte du « ? » de chaque note : la mesure, votre cible, la règle de notation, le poids."""
+    nom, cible_note, poids = note["nom"], note["cible"], pct(note["poids"])
+    confort = 1 - MARGE_CONFORT
+    if nom == "niveau_de_risque":
+        a, b = cible_note
+        texte = ("**Mesure** : volatilité annuelle du portefeuille, l'écart-type des rendements quotidiens "
+                 "de 2021 à 2026 en dollars canadiens, multiplié par la racine de 252. Elle tient compte des "
+                 "corrélations entre les titres (Markowitz).\n\n"
+                 f"**Votre cible** : de {pct(a)} à {pct(b)}.\n\n"
+                 f"**Note** : 100 jusqu'au milieu de la plage ({pct((a + b) / 2)}), 70 pile à {pct(b)}, "
+                 f"0 à {pct(2 * b)}. Sous {pct(a)}, la note baisse aussi, sauf pour un objectif de "
+                 "préservation : le portefeuille n'utilise pas le risque accepté.")
+    elif nom == "risque_de_perte":
+        texte = ("**Mesure** : pire baisse du sommet au creux entre 2021 et 2026, en gardant les pondérations "
+                 "actuelles constantes.\n\n"
+                 f"**Votre cible** : au plus {pct(cible_note)}, la plus prudente entre la perte que vous tolérez "
+                 "et celle de votre niveau de risque.\n\n"
+                 f"**Note** : 100 jusqu'à {pct(confort * cible_note)}, 70 pile à {pct(cible_note)}, "
+                 f"0 à {pct(2 * cible_note)}.")
+    elif nom == "diversification":
+        texte = ("**Mesure** : nombre effectif de paris, soit 1 divisé par la somme des carrés des parts du "
+                 "risque. Quatre titres qui portent chacun un quart du risque font 4 paris ; un titre qui en "
+                 "porte la moitié pèse comme deux. Les FNB larges (XIU.TO, SPY, ESGV, XBB.TO, ZST.TO, AGG) "
+                 "comptent comme déjà diversifiés ; plafond à 20.\n\n"
+                 f"**Votre cible** : au moins {nombre(cible_note)} paris.\n\n"
+                 f"**Note** : 0 pour un seul pari, 70 pile à {nombre(cible_note)}, 100 dès "
+                 f"{nombre((1 + 2 * MARGE_CONFORT) * cible_note)}.")
+    else:  # resistance_crise
+        texte = ("**Mesure** : le portefeuille actuel rejoué sur l'année 2022, quand actions et obligations "
+                 "ont baissé ensemble ; on garde la pire baisse du sommet au creux.\n\n"
+                 f"**Votre cible** : au plus {pct(cible_note)}. Repère : un portefeuille 60/40 a perdu environ "
+                 "14 % en 2022.\n\n"
+                 f"**Note** : 100 jusqu'à {pct(confort * cible_note)}, 70 pile à {pct(cible_note)}, "
+                 f"0 à {pct(2 * cible_note)}.")
+    return texte + f"\n\n**Poids dans le score** : {poids}."
 
 
 def bandeau_verdict(verdict):
@@ -517,7 +569,8 @@ def resultats():
     st.header("Le verdict", divider="gray")
     with st.container(border=True):
         colonne_score, colonne_verdict = st.columns([1, 2], vertical_alignment="center")
-        colonne_score.metric("Score d'adéquation", f"{resultat['score']} / 100")
+        colonne_score.metric("Score d'adéquation", f"{resultat['score']} / 100",
+                             help=aide_score(resultat, profil))
         with colonne_verdict:
             bandeau_verdict(resultat["verdict"])
             if resultat.get("raison_verdict"):
@@ -527,7 +580,7 @@ def resultats():
                        f"capital de {dollars(mesures['capital'])}.")
     for colonne, note in zip(st.columns(len(resultat["notes"])), resultat["notes"]):
         with colonne.container(border=True):
-            st.metric(NOMS_NOTES[note["nom"]], f"{note['note']} / 100")
+            st.metric(NOMS_NOTES[note["nom"]], f"{note['note']} / 100", help=aide_note(note))
             st.progress(int(note["note"]))
             st.write(md(note["explication"]))
 

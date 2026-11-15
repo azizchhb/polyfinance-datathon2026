@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # la racine : piste_b.py
 
-from piste_b import (evaluer, simuler, proposer_scenarios, note_plage, note_plancher,
+from piste_b import (evaluer, simuler, proposer_scenarios, note_plage, note_plancher, note_plafond,
                      paris_ajustes, niveau_effectif, appliquer)
 
 # Fausses mesures du guide (page 2)
@@ -39,18 +39,21 @@ def codes(resultat):
 
 def test_trois_personas():
     a, m, r = evaluer(MESURES, AMIRA), evaluer(MESURES, MATEO), evaluer(MESURES, ROBERT)
-    assert [n["note"] for n in a["notes"]] == [100, 100, 94], a["notes"]
-    assert [n["note"] for n in m["notes"]] == [74, 45, 70], m["notes"]
-    assert [n["note"] for n in r["notes"]] == [44, 0, 62], r["notes"]
-    assert (a["score"], m["score"], r["score"]) == (97, 64, 30)
-    assert (a["verdict"], m["verdict"], r["verdict"]) == ("adequat", "a_surveiller", "inadequat")
+    assert [n["note"] for n in a["notes"]] == [100, 84, 66], a["notes"]
+    assert [n["note"] for n in m["notes"]] == [52, 32, 49], m["notes"]
+    assert [n["note"] for n in r["notes"]] == [31, 0, 44], r["notes"]
+    assert (a["score"], m["score"], r["score"]) == (82, 45, 21)
+    assert (a["verdict"], m["verdict"], r["verdict"]) == ("adequat", "inadequat", "inadequat")
     assert "TITRE_DOMINANT" in codes(a)
     assert codes(m) == {"CRYPTO_REFUSEE", "TITRE_DOMINANT", "SECTEUR_DOMINANT"}
 
 
 def test_bornes_des_notes():
     assert note_plage(0.08, 0.08, 0.13) == 100
-    assert note_plage(0.13, 0.08, 0.13) == 100
+    assert note_plage(0.105, 0.08, 0.13) == 100  # jusqu'au milieu de la plage
+    assert note_plage(0.13, 0.08, 0.13) == 70    # pile à la limite
+    assert note_plafond(0.15, 0.20) == 100 and note_plafond(0.20, 0.20) == 70 and note_plafond(0.40, 0.20) == 0
+    assert note_plancher(7.5, 5) == 100 and note_plancher(5, 5) == 70
     assert note_plage(0.26, 0.08, 0.13) == 0
     assert paris_ajustes({"SPY": 0.6, "XBB.TO": 0.4}) == 20  # que des FNB larges
     assert note_plancher(paris_ajustes({"NVDA": 1.0}), 5) == 0  # un seul titre

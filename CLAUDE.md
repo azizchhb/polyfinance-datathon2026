@@ -221,7 +221,10 @@ les cibles de la piste B. Après le MVP : ratio de diversification, corrélation
 Le fichier `piste_b.py` est **écrit et testé** : cibles par profil, trois notes, score, huit
 alertes, `simuler`, `proposer_scenarios`. Le détail des formules est dans le guide de la piste B.
 
-- Test de référence : avec les fausses mesures du guide, les scores sont 97 (Amira), 64 (Mateo), 30 (Robert).
+- Test de référence : avec les fausses mesures du guide, les scores sont 82 (Amira), 45 (Mateo), 21 (Robert).
+  Depuis le 15 novembre, chaque note est graduée : 100 avec une marge de confort, 70 pile à la limite du profil,
+  0 au double de la limite (`NOTE_LIMITE`, `MARGE_CONFORT`). Avant, elle valait 100 partout sous la limite, ce qui
+  donnait des notes en tout ou rien et des scores optimistes (les anciens tests donnaient 97, 64 et 30).
   Lancer `python tests/test_piste_b.py` depuis la racine. Après toute modification de `piste_b.py`,
   relancer aussi `python aws/deployer_lambda.py` : la fonction Lambda embarque ce fichier.
 - Reste à faire : calibrer les cibles (`CIBLES`) dès que la piste A fournit les trois portefeuilles
@@ -316,7 +319,7 @@ Un fichier `piste_c.py` qui expose `demander`. À l'intérieur :
 
 - `app.py` : interface Streamlit. Lancer avec `python -m streamlit run app.py`. Passe l'historique du chat à `demander`.
 - `piste_a.py` : mesures du portefeuille à partir des vraies données (moteur du collègue + `analyser`). `python piste_a.py` : vérifications.
-- `piste_b.py` : profil, score, alertes, scénarios. Testé : redonne 97, 64 et 30 sur l'exemple du guide.
+- `piste_b.py` : profil, score, alertes, scénarios. Testé : redonne 82, 45 et 21 sur l'exemple du guide.
 - `piste_c.py` : l'agent (boucle Converse, quatre outils sur Lambda, gouvernance, trace). Démo : `python piste_c.py`.
 - `donnees.py` : lecture des données depuis S3 avec cache local, et téléversement.
 - `README.md` : présentation courte et commandes de lancement.
