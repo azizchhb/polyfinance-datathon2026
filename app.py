@@ -35,6 +35,12 @@ NOMS_NOTES = {"niveau_de_risque": "Niveau de risque",
 COULEURS = {"clair": ["#2a78d6", "#eb6834"], "sombre": ["#3987e5", "#d95926"]}
 ENCRE = {"clair": "#31333f", "sombre": "#fafafa"}
 SERIES = ["Poids dans le capital", "Part du risque"]
+# Les six premiers créneaux de la même palette, pour l'anneau. L'ordre est fixe et jamais
+# recyclé : c'est pourquoi l'anneau se limite à six parts (voir parts_portefeuille).
+CATEGORIELLES = {"clair": ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"],
+                 "sombre": ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#0ca30c"]}
+ENCRE_DOUCE = {"clair": "#52514e", "sombre": "#c3c2b7"}
+FOND = {"clair": "#ffffff", "sombre": "#0e1117"}
 
 PERSONAS = {
     "Amira": {"risque": 3, "horizon_annees": 15, "objectif": "croissance", "perte_max_toleree": None,
@@ -107,6 +113,65 @@ def portefeuille_type(persona):
     return dict(PORTEFEUILLE_DEMO)
 
 
+def style(largeur):
+    """La feuille de style de la page : largeur bornée, échelle typographique, cartes.
+
+    Streamlit sert des polices de 16 px dans une page sans limite de largeur : sur un grand écran
+    les colonnes s'étirent, tout paraît petit et la page tient en un écran et demi. On borne la
+    largeur du contenu, on monte l'échelle d'un cran (tout Streamlit est en rem, il suffit de
+    changer la taille de base) et les sections s'empilent au lieu de se serrer côte à côte : la
+    page devient longue, chaque élément est lisible et le vide sur les côtés disparaît.
+    """
+    return f"""<style>
+/* largeur du contenu et respiration verticale */
+.block-container, [data-testid="stMainBlockContainer"] {{
+    max-width: {largeur}px;
+    padding: 3.5rem 2rem 7rem 2rem;
+}}
+
+/* échelle typographique */
+html {{ font-size: 17.5px !important; }}
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li {{ font-size: 1.02rem; line-height: 1.7; }}
+[data-testid="stCaptionContainer"] p {{ font-size: 0.92rem; line-height: 1.6; }}
+h1 {{ font-size: 2.9rem !important; letter-spacing: -0.025em; }}
+h2 {{ font-size: 1.85rem !important; letter-spacing: -0.015em; padding-top: 2.6rem !important; }}
+h3 {{ font-size: 1.3rem !important; letter-spacing: -0.01em; }}
+
+/* cartes : on arrondit la bordure, sans toucher aux marges (ce conteneur enveloppe aussi
+   les colonnes : une marge ici décalerait toute la page) */
+[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 14px; }}
+
+/* chiffres : la valeur est l'élément le plus gros de la carte */
+[data-testid="stMetricValue"] {{ font-size: 2.4rem; font-weight: 600; line-height: 1.15; }}
+[data-testid="stMetricLabel"] p {{ font-size: 0.92rem; }}
+
+/* barres de progression épaissies, sinon invisibles à cette échelle */
+[data-testid="stProgress"] > div > div,
+[data-testid="stProgress"] > div > div > div {{ height: 12px; border-radius: 99px; }}
+
+/* la liste des titres à côté de l'anneau : la pastille reprend la couleur de sa part */
+.ligne-titre {{
+    display: flex; align-items: center; gap: 0.7rem;
+    padding: 0.62rem 0.1rem; font-size: 1rem;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}}
+.ligne-titre .pastille {{ width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }}
+.ligne-titre .nom {{ font-weight: 600; }}
+.ligne-titre .montant {{ margin-left: auto; opacity: 0.72; }}
+.ligne-titre .poids {{ width: 4.4rem; text-align: right; font-variant-numeric: tabular-nums; }}
+
+/* onglets : les libellés gardent leur taille par défaut, trop petite à cette échelle */
+[data-testid="stTabs"] button p {{ font-size: 1rem; }}
+
+/* alertes, boutons et saisie à la taille du reste */
+[data-testid="stAlert"] {{ border-radius: 12px; padding: 1rem 1.1rem; }}
+[data-testid="stAlert"] p {{ font-size: 1rem; }}
+.stButton button {{ border-radius: 10px; padding: 0.55rem 1.1rem; font-size: 1rem; }}
+[data-testid="stChatInput"] textarea {{ font-size: 1.02rem; }}
+</style>"""
+
+
 def md(texte):
     """Texte sûr pour le Markdown de Streamlit : un « $ » non échappé ouvre une formule mathématique."""
     return str(texte).replace("$", "\\$")
@@ -114,6 +179,32 @@ def md(texte):
 
 def dollars(x):
     return f"{x:,.0f}".replace(",", " ") + " $"
+
+
+def pourcent(x, decimales=1):
+    return f"{100 * x:.{decimales}f} %".replace(".", ",")
+
+
+def liste_titres(mesures):
+    """Les lignes du portefeuille en HTML, de la plus grosse à la plus petite.
+
+    La pastille reprend la couleur de l'anneau, ce qui relie les deux sans légende ; les lignes
+    regroupées sous « Autres » portent la couleur de cette part. Le « $ » est écrit en entité
+    HTML : tel quel, deux dollars sur la même page ouvrent une formule mathématique.
+    """
+    couleurs = dict(zip([titre for titre, _ in parts_portefeuille(mesures)],
+                        CATEGORIELLES[mode_theme()]))
+    lignes = []
+    for titre, part in sorted(mesures["poids"].items(), key=lambda couple: couple[1], reverse=True):
+        pastille = couleurs.get(titre) or couleurs.get("Autres", "#9a9a95")
+        montant = dollars(mesures["capital"] * part).replace("$", "&#36;")
+        pourcentage = f"{100 * part:.1f}".replace(".", ",")
+        lignes.append(f'<div class="ligne-titre">'
+                      f'<span class="pastille" style="background:{pastille}"></span>'
+                      f'<span class="nom">{titre}</span>'
+                      f'<span class="montant">{montant}</span>'
+                      f'<span class="poids">{pourcentage} %</span></div>')
+    return "".join(lignes)
 
 
 def etiquette(dico, valeur):
@@ -152,21 +243,77 @@ def graphique(mesures):
         etiquette="format(datum.Valeur, '.0f') + ' %'",
     ).encode(
         y=alt.Y("Titre:N", sort=symboles, title=None,
-                axis=alt.Axis(labelFontSize=13, ticks=False, domain=False, labelPadding=10)),
+                axis=alt.Axis(labelFontSize=15, ticks=False, domain=False, labelPadding=14)),
         yOffset=alt.YOffset("Mesure:N", sort=SERIES),
         x=alt.X("Valeur:Q", title="% du total",
                 scale=alt.Scale(domain=[0, float(df["Valeur"].max()) * 1.2], nice=False),
-                axis=alt.Axis(tickCount=5, format=".0f", domain=False, gridOpacity=0.35)),
+                axis=alt.Axis(tickCount=5, format=".0f", domain=False, gridOpacity=0.35,
+                              labelFontSize=13, titleFontSize=13, titlePadding=12)),
         color=alt.Color("Mesure:N", sort=SERIES, scale=alt.Scale(domain=SERIES, range=COULEURS[theme]),
-                        legend=alt.Legend(title=None, orient="top", direction="horizontal", symbolType="square")),
+                        legend=alt.Legend(title=None, orient="top", direction="horizontal",
+                                          symbolType="square", labelFontSize=14, symbolSize=180,
+                                          offset=14)),
         tooltip=[alt.Tooltip("Titre:N", title="Titre"), alt.Tooltip("Mesure:N", title="Mesure"),
                  alt.Tooltip("affichage:N", title="% du total")],
     )
-    barres = base.mark_bar(size=18, cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+    barres = base.mark_bar(size=26, cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
     etiquettes = (base.transform_filter(alt.datum.Mesure == SERIES[1])
-                  .mark_text(align="left", baseline="middle", dx=6, fontSize=12)
+                  .mark_text(align="left", baseline="middle", dx=8, fontSize=14)
                   .encode(text="etiquette:N", color=alt.value(ENCRE[theme])))
-    return (barres + etiquettes).properties(height=max(120, 48 * len(symboles)))
+    return (barres + etiquettes).properties(height=max(280, 72 * len(symboles)))
+
+
+def parts_portefeuille(mesures):
+    """Les parts à dessiner dans l'anneau : les cinq plus grosses lignes, puis « Autres ».
+
+    Au-delà de six parts, les tranches deviennent trop fines pour être comparées d'un coup
+    d'œil et les étiquettes se chevauchent. Le tableau plus bas garde le détail complet, ligne
+    par ligne : rien n'est caché, seulement regroupé pour le dessin.
+    """
+    poids = sorted(mesures["poids"].items(), key=lambda couple: couple[1], reverse=True)
+    if len(poids) > 6:
+        poids = poids[:5] + [("Autres", sum(part for _, part in poids[5:]))]
+    return poids
+
+
+def beignet(mesures):
+    """Le portefeuille en anneau : la part de chaque titre, le capital au centre.
+
+    Chaque part porte son nom et son pourcentage à l'extérieur de l'anneau : trois des six
+    teintes passent sous le rapport de contraste de 3:1 sur fond clair, donc la couleur ne
+    distingue jamais une part à elle seule. Un trait de la couleur du fond sépare les parts,
+    sinon deux teintes voisines se touchent et se lisent comme une seule.
+    """
+    theme = mode_theme()
+    parts = parts_portefeuille(mesures)
+    df = pd.DataFrame([{"Titre": titre, "Part": 100 * part, "Rang": rang}
+                       for rang, (titre, part) in enumerate(parts)])
+
+    base = alt.Chart(df).transform_calculate(
+        etiquette="datum.Titre + '  ' + replace(format(datum.Part, '.1f'), '.', ',') + ' %'",
+        affichage="replace(format(datum.Part, '.1f'), '.', ',') + ' %'",
+    ).encode(
+        theta=alt.Theta("Part:Q", stack=True),
+        # L'ordre vient du rang, pas de la taille : « Autres » reste la dernière part même
+        # quand son total dépasse celui de la cinquième ligne.
+        order=alt.Order("Rang:Q", sort="ascending"),
+        color=alt.Color("Titre:N", sort=None, legend=None,
+                        scale=alt.Scale(domain=list(df["Titre"]),
+                                        range=CATEGORIELLES[theme][:len(df)])),
+        tooltip=[alt.Tooltip("Titre:N", title="Titre"),
+                 alt.Tooltip("affichage:N", title="Part du capital")],
+    )
+    anneau = base.mark_arc(innerRadius=118, outerRadius=170, cornerRadius=2,
+                           stroke=FOND[theme], strokeWidth=2)
+    etiquettes = base.mark_text(radius=196, fontSize=14).encode(
+        text=alt.Text("etiquette:N"), color=alt.value(ENCRE[theme]))
+    capital = (alt.Chart(pd.DataFrame([{"texte": dollars(mesures["capital"])}]))
+               .mark_text(fontSize=38, fontWeight=700, dy=-14)
+               .encode(text="texte:N", color=alt.value(ENCRE[theme])))
+    detail = (alt.Chart(pd.DataFrame([{"texte": f"{len(mesures['poids'])} titres"}]))
+              .mark_text(fontSize=15, dy=22)
+              .encode(text="texte:N", color=alt.value(ENCRE_DOUCE[theme])))
+    return alt.layer(anneau, etiquettes, capital, detail).properties(height=490)
 
 
 def tableau_poids(mesures):
@@ -176,9 +323,49 @@ def tableau_poids(mesures):
         "Titre": symboles,
         "Classe": [mesures["classe_par_titre"].get(s, "") for s in symboles],
         "Secteur": [mesures["secteur_par_titre"].get(s, "") for s in symboles],
+        "Montant (CAD)": [round(mesures["capital"] * mesures["poids"][s]) for s in symboles],
         "Poids (%)": [round(100 * mesures["poids"][s], 1) for s in symboles],
         "Part du risque (%)": [round(100 * mesures["contributions"][s], 1) for s in symboles],
     })
+
+
+def graphique_diversification(mesures):
+    """Volatilité de chaque titre pris seul, moyenne pondérée des titres, volatilité réelle du portefeuille.
+
+    Forme « mise en relief » : une seule série porte l'histoire, le portefeuille réel, en bleu ;
+    les titres pris isolément et leur moyenne pondérée sont le contexte, en gris. L'écart entre
+    la moyenne pondérée et le portefeuille est le gain de diversification de Markowitz : il ne
+    fait intervenir aucun rendement espéré, seulement les covariances.
+    """
+    theme = mode_theme()
+    titres = sorted(mesures["volatilite_par_titre"].items(), key=lambda couple: couple[1], reverse=True)
+    types = ["Portefeuille réel", "Moyenne pondérée des titres", "Titre pris seul"]
+    df = pd.DataFrame(
+        [{"Ligne": "Portefeuille réel", "Type": types[0], "Valeur": 100 * mesures["volatilite"]},
+         {"Ligne": "Si tout bougeait ensemble", "Type": types[1],
+          "Valeur": 100 * mesures["volatilite_sans_diversification"]}]
+        + [{"Ligne": s, "Type": types[2], "Valeur": 100 * v} for s, v in titres])
+    gris_clair, gris = ("#c3c2b7", "#898781") if theme == "clair" else ("#52514e", "#898781")
+
+    base = alt.Chart(df).transform_calculate(
+        etiquette="replace(format(datum.Valeur, '.1f'), '.', ',') + ' %'",
+    ).encode(
+        y=alt.Y("Ligne:N", sort=list(df["Ligne"]), title=None,
+                axis=alt.Axis(labelFontSize=15, ticks=False, domain=False, labelPadding=14, labelLimit=320)),
+        x=alt.X("Valeur:Q", title="Volatilité annuelle (%)",
+                scale=alt.Scale(domain=[0, float(df["Valeur"].max()) * 1.2], nice=False),
+                axis=alt.Axis(tickCount=5, format=".0f", domain=False, gridOpacity=0.35,
+                              labelFontSize=13, titleFontSize=13, titlePadding=12)),
+        color=alt.Color("Type:N", sort=types,
+                        scale=alt.Scale(domain=types, range=[COULEURS[theme][0], gris, gris_clair]),
+                        legend=alt.Legend(title=None, orient="top", direction="horizontal",
+                                          symbolType="square", labelFontSize=14, symbolSize=180, offset=14)),
+        tooltip=[alt.Tooltip("Ligne:N", title="Ligne"), alt.Tooltip("etiquette:N", title="Volatilité annuelle")],
+    )
+    barres = base.mark_bar(size=24, cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
+    etiquettes = (base.mark_text(align="left", baseline="middle", dx=8, fontSize=14)
+                  .encode(text="etiquette:N", color=alt.value(ENCRE[theme])))
+    return (barres + etiquettes).properties(height=max(240, 52 * len(df)))
 
 
 # ------------------------------------------------------------------ état et page
@@ -190,9 +377,11 @@ etat.setdefault("messages", [])
 if etat.etape == "resultats" and not (etat.get("profil") and etat.get("portefeuille")):
     etat.etape = "questionnaire"
 
-st.set_page_config(page_title="Diversifié pour qui ?",
-                   layout="centered" if etat.etape == "questionnaire" else "wide",
+st.set_page_config(page_title="Diversifié pour qui ?", layout="wide",
                    initial_sidebar_state="collapsed")
+# Largeur bornée plutôt que la mise en page « centered » : on choisit le nombre de pixels,
+# plus large pour les résultats (un tableau de cinq colonnes) que pour le questionnaire.
+st.markdown(style(900 if etat.etape == "questionnaire" else 1180), unsafe_allow_html=True)
 
 
 # ------------------------------------------------------------ 1. questionnaire
@@ -310,9 +499,10 @@ def resultats():
         etat.etape = "questionnaire"
         st.rerun()
 
-    choix = st.radio("Regarder ce portefeuille avec le profil de", ["Mon profil"] + list(PERSONAS),
-                     horizontal=True, key="persona_affiche",
-                     captions=["Vos réponses au questionnaire"] + [PORTRAITS[p] for p in PERSONAS])
+    with st.container(border=True):  # la barre de choix se lit comme un réglage, pas comme du texte
+        choix = st.radio("Regarder ce portefeuille avec le profil de", ["Mon profil"] + list(PERSONAS),
+                         horizontal=True, key="persona_affiche",
+                         captions=["Vos réponses au questionnaire"] + [PORTRAITS[p] for p in PERSONAS])
     profil = profil_saisi if choix == "Mon profil" else dict(PERSONAS[choix])
     if etat.get("persona_chat") != choix:  # on change de personne : la discussion repart à zéro
         etat.messages, etat.persona_chat = [], choix
@@ -325,29 +515,74 @@ def resultats():
     resultat = evaluer(mesures, profil)
 
     # ---- le verdict
+    # Le score sur toute la largeur, puis les trois notes sous lui : les quatre chiffres sur une
+    # seule ligne se serraient, et le verdict se lisait aussi petit que le reste.
     st.header("Le verdict", divider="gray")
-    colonne_score, colonne_notes = st.columns([1, 3])
-    with colonne_score:
-        st.metric("Score d'adéquation", f"{resultat['score']} / 100", border=True)
-        bandeau_verdict(resultat["verdict"])
-        st.caption(f"Niveau de risque retenu : {nombre(resultat['niveau_effectif'])} sur 3, "
-                   f"objectif {etiquette(OBJECTIFS, profil['objectif']).lower()}, "
-                   f"capital de {dollars(mesures['capital'])}.")
-    with colonne_notes:
-        for colonne, note in zip(st.columns(3), resultat["notes"]):
-            with colonne.container(border=True):
-                st.metric(NOMS_NOTES[note["nom"]], f"{note['note']} / 100")
-                st.progress(int(note["note"]))
-                st.write(md(note["explication"]))
+    with st.container(border=True):
+        colonne_score, colonne_verdict = st.columns([1, 2], vertical_alignment="center")
+        colonne_score.metric("Score d'adéquation", f"{resultat['score']} / 100")
+        with colonne_verdict:
+            bandeau_verdict(resultat["verdict"])
+            st.caption(f"Niveau de risque retenu : {nombre(resultat['niveau_effectif'])} sur 3, "
+                       f"objectif {etiquette(OBJECTIFS, profil['objectif']).lower()}, "
+                       f"capital de {dollars(mesures['capital'])}.")
+    for colonne, note in zip(st.columns(3), resultat["notes"]):
+        with colonne.container(border=True):
+            st.metric(NOMS_NOTES[note["nom"]], f"{note['note']} / 100")
+            st.progress(int(note["note"]))
+            st.write(md(note["explication"]))
+
+    # ---- ce que vous détenez
+    # L'anneau et la liste côte à côte : seul, un cercle laisse une large bande vide de chaque
+    # côté, et la liste est de toute façon ce qu'on vient chercher juste après le dessin.
+    st.header("Ce que vous détenez", divider="gray")
+    colonne_anneau, colonne_liste = st.columns([3, 2], vertical_alignment="center")
+    colonne_anneau.altair_chart(beignet(mesures), use_container_width=True)
+    colonne_liste.markdown(liste_titres(mesures), unsafe_allow_html=True)
+    if len(mesures["poids"]) > 6:
+        st.caption("Part de chaque titre dans le capital. Les lignes au-delà des cinq plus "
+                   "grosses sont regroupées sous « Autres » dans l'anneau : la liste à droite "
+                   "et l'onglet Tableau plus bas gardent le détail, ligne par ligne.")
+    else:
+        st.caption("Part de chaque titre dans le capital.")
 
     # ---- d'où vient le risque
+    # Le graphique et le tableau portent les mêmes chiffres : deux onglets plutôt que l'un sous
+    # l'autre. Le tableau reste à un clic, ce qui est la contrepartie exigée par les couleurs :
+    # il se lit sans distinguer le bleu de l'orange et sans survoler les barres.
     st.header("D'où vient le risque", divider="gray")
-    colonne_graphique, colonne_tableau = st.columns([3, 2])
-    with colonne_graphique:
+    onglet_graphique, onglet_tableau, onglet_diversification = st.tabs(
+        ["Graphique", "Tableau", "Gain de diversification"])
+    with onglet_graphique:
         st.altair_chart(graphique(mesures), use_container_width=True)
-        st.caption("Quand la barre orange dépasse la bleue, le titre pèse plus lourd dans le risque que dans le capital.")
-    with colonne_tableau:
-        st.dataframe(tableau_poids(mesures), hide_index=True, width="stretch")
+        st.caption("Quand la barre orange dépasse la bleue, le titre pèse plus lourd dans le "
+                   "risque que dans le capital.")
+    with onglet_tableau:
+        st.dataframe(
+            tableau_poids(mesures), hide_index=True, width="stretch",
+            height=min(620, 36 * len(mesures["poids"]) + 45),
+            column_config={
+                "Secteur": st.column_config.TextColumn("Secteur", width="medium"),
+                "Montant (CAD)": st.column_config.NumberColumn("Montant (CAD)", format="%d $"),
+            })
+        st.caption("Les mêmes chiffres que le graphique, lisibles sans couleur ni survol.")
+    with onglet_diversification:
+        if "gain_diversification" not in mesures:
+            st.info("Le gain de diversification n'est pas fourni par cette version des mesures.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Si tout bougeait ensemble", pourcent(mesures["volatilite_sans_diversification"]),
+                      help="Moyenne pondérée des volatilités des titres : la volatilité qu'aurait le "
+                           "portefeuille si tous ses titres montaient et baissaient en même temps.")
+            c2.metric("Volatilité réelle du portefeuille", pourcent(mesures["volatilite"]))
+            c3.metric("Gain de diversification",
+                      f"{100 * mesures['gain_diversification']:.1f} points".replace(".", ","),
+                      help=f"Ratio de diversification : {mesures['ratio_diversification']:.2f}".replace(".", ","))
+            st.altair_chart(graphique_diversification(mesures), use_container_width=True)
+            st.caption("Les titres ne montent pas et ne baissent pas tous en même temps : l'écart entre la "
+                       "moyenne pondérée des volatilités et la volatilité réelle est le seul gain que la "
+                       "théorie de Markowitz garantit. Il repose sur les covariances passées, sans aucun "
+                       "rendement espéré.")
 
     # ---- alertes
     st.header("Alertes", divider="gray")
@@ -366,6 +601,7 @@ def resultats():
             st.caption(PORTRAITS[nom])
             st.metric("Score", f"{r['score']} / 100")
             bandeau_verdict(r["verdict"])
+            st.caption(" · ".join(f"{NOMS_NOTES[n['nom']]} {n['note']}" for n in r["notes"]))
             if r["alertes"]:
                 st.write(md(r["alertes"][0]["message"]))
                 if len(r["alertes"]) > 1:
@@ -380,12 +616,15 @@ def resultats():
     scenarios = proposer_scenarios(portefeuille, profil, analyser)
     if not scenarios:
         st.info("Aucun des changements testés ne rapproche ce portefeuille des cibles de ce profil.")
-    for numero, (colonne, scenario) in enumerate(zip(st.columns(max(1, len(scenarios))), scenarios), start=1):
+    # Un scénario par ligne, sur toute la largeur : côte à côte, la phrase et les deux listes
+    # tombaient dans des colonnes de quelques mots de large.
+    for numero, scenario in enumerate(scenarios, start=1):
         avant, apres = scenario["avant"]["score"], scenario["apres"]["score"]
-        with colonne.container(border=True):
-            st.subheader(f"Scénario {numero}")
-            st.write(md(scenario["phrase"]))
-            st.metric("Score après", f"{apres} / 100", delta=apres - avant)
+        with st.container(border=True):
+            texte, chiffre = st.columns([3, 1], vertical_alignment="center")
+            texte.subheader(f"Scénario {numero}")
+            texte.write(md(scenario["phrase"]))
+            chiffre.metric("Score après", f"{apres} / 100", delta=apres - avant)
             mieux, moins_bien = st.columns(2)
             mieux.markdown("**Ce qui s'améliore**")
             for ligne in scenario["ameliore"] or ["Rien"]:
@@ -398,9 +637,12 @@ def resultats():
                     st.write("- " + md(hypothese))
 
     # ---- hypothèses et limites
-    st.header("Hypothèses et limites du calcul", divider="gray")
-    for hypothese in dict.fromkeys(resultat["hypotheses"] + list(mesures.get("hypotheses", []))):
-        st.markdown("- " + md(hypothese))
+    # Repliées : la liste est longue, se lit une fois, et coupait la page entre les scénarios et
+    # la discussion. Le compte dans le titre dit qu'il y a quelque chose à ouvrir.
+    hypotheses = list(dict.fromkeys(resultat["hypotheses"] + list(mesures.get("hypotheses", []))))
+    with st.expander(f"Hypothèses et limites du calcul ({len(hypotheses)})"):
+        for hypothese in hypotheses:
+            st.markdown("- " + md(hypothese))
 
     # ---- discussion
     st.header("Discussion avec l'agent", divider="gray")

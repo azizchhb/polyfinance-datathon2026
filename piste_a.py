@@ -190,6 +190,14 @@ def analyser(portefeuille):
     contributions = moteur.step_3_risk_contribution()["Pct_Risk_Contrib"]
     perte_max = -moteur.step_4_maximum_drawdown()["max_drawdown"]  # contrat : perte en nombre positif
 
+    # Gain de diversification (Markowitz, sans rendement espéré) : la volatilité qu'aurait le
+    # portefeuille si tous les titres bougeaient ensemble, soit la moyenne pondérée de leurs
+    # volatilités, face à la volatilité réelle. L'écart est ce que la diversification efface.
+    vol_par_titre = moteur.returns_df.std(ddof=1) * np.sqrt(JOURS_PAR_AN)
+    vol_sans_diversification = float(np.dot(poids, vol_par_titre.loc[ordre].values))
+    gain = vol_sans_diversification - float(volatilite)
+    ratio = vol_sans_diversification / float(volatilite) if volatilite > 0 else 1.0
+
     par_classe, par_secteur = {}, {}
     for s, w in zip(ordre, poids):
         classe, secteur = connus[s]
@@ -204,6 +212,8 @@ def analyser(portefeuille):
         "dernier taux reporté les jours sans cotation : le risque mesuré est celui d'un investisseur canadien.",
         "Rendements simples quotidiens, covariance annualisée sur 252 jours, volatilité = racine de w'Σw.",
         "Perte maximale : pire baisse du sommet au creux de la valeur du portefeuille, à pondérations constantes.",
+        "Gain de diversification : écart entre la moyenne pondérée des volatilités des titres (si tous "
+        "bougeaient ensemble) et la volatilité réelle du portefeuille ; aucun rendement espéré n'intervient.",
         "Univers de 31 actifs choisi en 2026 parmi des titres devenus gros (biais du survivant). "
         "Aucune composition de FNB, aucune cote ESG, aucune donnée fondamentale.",
         _provenance_donnees(),
@@ -219,6 +229,11 @@ def analyser(portefeuille):
         "classe_par_titre": {s: connus[s][0] for s in ordre},
         "secteur_par_titre": {s: connus[s][1] for s in ordre},
         "capital": float(capital),
+        # Ajouts du 15 novembre, en plus du contrat : le gain de diversification de Markowitz.
+        "volatilite_par_titre": {s: float(vol_par_titre[s]) for s in ordre},
+        "volatilite_sans_diversification": vol_sans_diversification,
+        "gain_diversification": gain,
+        "ratio_diversification": ratio,
         "hypotheses": hypotheses,
     }
 
@@ -235,6 +250,8 @@ if __name__ == "__main__":
 
     CLES_CONTRAT = {"volatilite", "perte_max", "poids", "contributions", "poids_par_classe",
                     "poids_par_secteur", "classe_par_titre", "secteur_par_titre", "capital"}
+    CLES_AJOUTEES = {"hypotheses", "volatilite_par_titre", "volatilite_sans_diversification",
+                     "gain_diversification", "ratio_diversification"}
 
     DEMO = {"NVDA": 10000, "QQQ": 12500, "BTC-USD": 5000, "XIU.TO": 17500, "XBB.TO": 5000}
     PERSONAS = {
@@ -257,8 +274,12 @@ if __name__ == "__main__":
     seul = analyser({"NVDA": 1000})
     attendu = prix_cad()["NVDA"].dropna().pct_change().dropna().std() * np.sqrt(JOURS_PAR_AN)
     assert abs(seul["volatilite"] - attendu) < 1e-9, "un seul titre doit avoir la volatilité du titre"
-    assert set(m) - {"hypotheses"} == CLES_CONTRAT, "les clés doivent être celles du contrat"
+    assert set(m) - CLES_AJOUTEES == CLES_CONTRAT, "les clés doivent être celles du contrat"
     assert all(isinstance(v, float) for v in (m["volatilite"], m["perte_max"], m["capital"]))
+    assert m["volatilite_sans_diversification"] >= m["volatilite"] - 1e-9, "la diversification ne peut pas ajouter de risque"
+    assert abs(seul["gain_diversification"]) < 1e-9, "un seul titre : aucun gain de diversification"
+    print(f"Gain de diversification de la démo : {pct(m['volatilite_sans_diversification'])} si tout bougeait "
+          f"ensemble, {pct(m['volatilite'])} en réalité, ratio {m['ratio_diversification']:.2f}".replace(".", ","))
     try:
         analyser({"NVDA": 1000, "PLTR": 1000})
     except ValueError as e:

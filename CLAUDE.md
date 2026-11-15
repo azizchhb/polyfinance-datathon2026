@@ -156,7 +156,10 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
 - `analyser(portefeuille)` -> `mesures` : `volatilite`, `perte_max`, `poids`, `contributions`,
   `poids_par_classe`, `poids_par_secteur`, `classe_par_titre`, `secteur_par_titre`, `capital`,
   plus `hypotheses` (liste de phrases : période, alignement des dates, devises, biais du survivant),
-  que `piste_c` reprend automatiquement dans `limites`. Un symbole hors des 31 actifs fait lever
+  que `piste_c` reprend automatiquement dans `limites`, et depuis le 15 novembre le gain de
+  diversification de Markowitz : `volatilite_par_titre`, `volatilite_sans_diversification` (moyenne
+  pondérée des volatilités), `gain_diversification` (écart, en décimal) et `ratio_diversification`.
+  Aucun rendement espéré n'intervient ; l'interface l'affiche dans l'onglet « Gain de diversification ». Un symbole hors des 31 actifs fait lever
   `ValueError` avec la liste des symboles non couverts ; `piste_a.symboles_non_couverts(portefeuille)`
   permet de les afficher avant d'appeler `analyser`.
 - `evaluer(mesures, profil)` -> `score` (0 à 100), `verdict`, `niveau_effectif`, `notes` (trois notes
