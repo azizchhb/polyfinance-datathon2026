@@ -171,6 +171,12 @@ h3 {{ font-size: 1.3rem !important; letter-spacing: -0.01em; }}
 [data-testid="stAlert"] p {{ font-size: 1rem; }}
 .stButton button {{ border-radius: 10px; padding: 0.55rem 1.1rem; font-size: 1rem; }}
 [data-testid="stChatInput"] textarea {{ font-size: 1.02rem; }}
+/* point de départ : « Personnalisé » seul sur la première ligne, les trois personas en dessous */
+.st-key-choix_persona div[role="radiogroup"] > div:first-child {{ flex-basis: 100%; }}
+.st-key-choix_persona div[role="radiogroup"] > div:not(:first-child) {{ flex: 1 1 0; min-width: 0; }}
+@media (max-width: 640px) {{
+  .st-key-choix_persona div[role="radiogroup"] > div:not(:first-child) {{ flex: 1 1 100%; }}
+}}
 </style>"""
 
 
@@ -558,8 +564,9 @@ def questionnaire():
     st.caption(AVERTISSEMENT)
 
     st.header("1. Votre profil", divider="gray")
-    persona = st.radio("Point de départ", list(PERSONAS) + ["Personnalisé"], horizontal=True, key="persona",
-                       captions=[PORTRAITS[p] for p in PERSONAS] + ["Vos propres réponses"])
+    with st.container(key="choix_persona"):  # la clé donne la classe CSS st-key-choix_persona (voir style)
+        persona = st.radio("Point de départ", ["Personnalisé"] + list(PERSONAS), horizontal=True, key="persona",
+                           captions=["Vos propres réponses"] + [PORTRAITS[p] for p in PERSONAS])
     k = persona  # les clés changent avec le persona : les champs reprennent ses valeurs
     base = dict(PERSONAS.get(persona, PERSONAS["Mateo"]))
     if etat.get("profil") and etat.get("persona_du_profil") == persona:
