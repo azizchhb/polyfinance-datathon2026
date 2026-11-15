@@ -58,7 +58,7 @@ Quatre pistes en parallèle :
 | Piste | Livre | État |
 |---|---|---|
 | A · Calculs | `analyser(portefeuille)` -> mesures | **Écrit** : `piste_a.py` (moteur du collègue + `analyser` du contrat, données lues sur S3). Repris par Aziz. |
-| B · Profil et score | `evaluer`, `simuler`, `proposer_scenarios` | **Écrit et testé** : `piste_b.py`. Cibles à calibrer avec les vrais chiffres. |
+| B · Profil et score | `evaluer`, `simuler`, `proposer_scenarios` | **Écrit et testé** : `piste_b.py` (version du collègue du 15 novembre, 7 tests dans `tests/test_piste_b.py`). Cibles à calibrer avec les vrais chiffres. |
 | C · Agent et AWS | `demander(texte, portefeuille, profil)` | **Écrit et testé** : `piste_c.py` (Bedrock, gouvernance, trace CloudWatch) |
 | D · Interface | `app.py` (Streamlit) | Écrit, pistes A et C branchées, lancé avec `python -m streamlit run app.py` |
 
@@ -196,6 +196,8 @@ Le fichier `piste_b.py` est **écrit et testé** : cibles par profil, trois note
 alertes, `simuler`, `proposer_scenarios`. Le détail des formules est dans le guide de la piste B.
 
 - Test de référence : avec les fausses mesures du guide, les scores sont 97 (Amira), 64 (Mateo), 30 (Robert).
+  Lancer `python tests/test_piste_b.py` depuis la racine. Après toute modification de `piste_b.py`,
+  relancer aussi `python aws/deployer_lambda.py` : la fonction Lambda embarque ce fichier.
 - Reste à faire : calibrer les cibles (`CIBLES`) dès que la piste A fournit les trois portefeuilles
   de référence, puis rejouer les tests.
 - Ne pas changer les clés de sortie sans prévenir les pistes C et D.
@@ -298,9 +300,13 @@ Dossiers :
 - `aws/` : `deployer_lambda.py` et `lambda_outils.py` (la fonction `alphaforge-outils`), `preuves/` (les trois preuves Bedrock, S3, Lambda, relançables).
 - `data/alphaforge_starter/` : le jeu de départ. `Claude outputs/` à l'intérieur est ignoré par Git.
 - `data/portefeuilles/` : portefeuilles d'exemple pour l'interface, CSV à deux colonnes `symbole,montant_cad`
-  (démo, équilibré 60/40, techno concentré, canadien avec énergie, et un cas de symbole non couvert).
+  (démo, équilibré 60/40, techno concentré, canadien avec énergie, un cas de symbole non couvert, et les
+  portefeuilles d'Amira, Mateo et Robert imaginés par la piste B).
 - `docs/` : `documentation_piste_c.md` (architecture et traces pour la piste D), `guide_piste_a/` (maquette HTML du guide de la piste A).
-- `tests/` : `faux.py`, fausse piste A aux chiffres inventés pour tester l'interface sans données.
+- `tests/` : `test_piste_b.py` (les 7 tests du guide de la piste B) et `faux.py`, fausse piste A aux chiffres
+  inventés pour tester l'interface sans données.
+- `archives/prototype_partie_b/` : application parallèle du collègue de la piste B (autre contrat, non branchée),
+  gardée pour ses idées. Voir son `LISEZMOI.md`.
 
 ## Documents de référence
 

@@ -7,28 +7,41 @@ Trois fonctions publiques :
 
 `analyser` est la fonction de la piste A. Elle est passée en argument pour
 pouvoir tester la piste B avec une fausse fonction.
+
+Code repris du guide « Piste B · Profil et score », avec deux corrections :
+  1. FNB_PAR_CLASSE utilise XIU.TO et XBB.TO (XIC.TO et ZAG.TO ne sont pas dans
+     assets_universe.csv : la vraie piste A planterait dessus).
+  2. FNB_LARGES contient les FNB larges du jeu de départ (XIU.TO, SPY, ESGV,
+     XBB.TO, ZST.TO, AGG). XIC.TO et ZAG.TO y restent seulement parce que les
+     fausses mesures du guide les utilisent.
+
+Conventions : pourcentages en décimales (0.164 = 16,4 %), pertes en nombre
+positif (0.31 = baisse de 31 %), clés en minuscules sans accent.
 """
+
 import numpy as np
 
 # ---------------------------------------------------------------- hypothèses
 NIVEAUX = [1, 2, 3]  # faible, modéré, élevé
 CIBLES = {
-    "vol_min":     [0.04, 0.08, 0.13],
-    "vol_max":     [0.08, 0.13, 0.20],
-    "perte_max":   [0.10, 0.20, 0.35],
-    "paris_min":   [6, 5, 4],
-    "titre_max":   [0.20, 0.25, 0.35],
-    "secteur_max": [0.30, 0.35, 0.45],
-    "crypto_max":  [0.00, 0.05, 0.10],
+    "vol_min":       [0.04, 0.08, 0.13],
+    "vol_max":       [0.08, 0.13, 0.20],
+    "perte_max":     [0.10, 0.20, 0.35],
+    "paris_min":     [6, 5, 4],
+    "titre_max":     [0.20, 0.25, 0.35],
+    "secteur_max":   [0.30, 0.35, 0.45],
+    "crypto_max":    [0.00, 0.05, 0.10],
     "rendement_max": [0.04, 0.06, 0.08],
 }
-POIDS = {
+POIDS = {  # (niveau de risque, risque de perte, diversification)
     "preservation": (0.25, 0.45, 0.30),
     "equilibre":    (0.35, 0.30, 0.35),
     "croissance":   (0.35, 0.20, 0.45),
 }
-# Aligné sur assets_universe.csv. QQQ, TLT et GLD n'y sont pas : trop concentrés sur un seul pari.
-FNB_LARGES = {"XIU.TO", "SPY", "ESGV", "XBB.TO", "ZST.TO", "AGG"}
+# FNB d'indice général (actions ou obligations) : traités comme déjà diversifiés.
+# Pas QQQ (concentré techno), pas TLT (pari sur les taux longs), pas GLD (or).
+FNB_LARGES = {"XIU.TO", "SPY", "ESGV", "XBB.TO", "ZST.TO", "AGG",
+              "XIC.TO", "ZAG.TO"}  # ces deux-là : seulement pour les fausses mesures du guide
 FNB_PAR_CLASSE = {"actions": "XIU.TO", "obligations": "XBB.TO", "or": "GLD"}
 PARIS_PLAFOND = 20.0
 EPS = 1e-9
@@ -36,6 +49,7 @@ EPS = 1e-9
 
 # ------------------------------------------------------------ étape 1 : cibles
 def capacite(horizon_annees):
+    """Risque que l'horizon permet : peu d'années = pas le temps de récupérer d'une baisse."""
     if horizon_annees <= 3:
         return 1
     if horizon_annees <= 7:
@@ -44,15 +58,18 @@ def capacite(horizon_annees):
 
 
 def niveau_effectif(profil):
+    """On retient le plus prudent entre la tolérance déclarée et la capacité."""
     return min(profil["risque"], capacite(profil["horizon_annees"]))
 
 
 def cible(nom, niveau):
+    """Valeur de la cible pour ce niveau. np.interp gère les demi-niveaux (1.5, 2.5)."""
     return float(np.interp(niveau, NIVEAUX, CIBLES[nom]))
 
 
 # ------------------------------------------------------------- étape 2 : notes
 def note_plage(x, a, b, penaliser_bas=True):
+    """100 dans [a, b], baisse en ligne droite de chaque côté. 0 au double de b."""
     if x > b:
         return max(0.0, 100 * (1 - (x - b) / b))
     if x < a and penaliser_bas:
@@ -61,18 +78,22 @@ def note_plage(x, a, b, penaliser_bas=True):
 
 
 def note_plafond(x, limite):
+    """100 sous la limite, puis baisse. 0 au double de la limite."""
     if x <= limite:
         return 100.0
     return max(0.0, 100 * (1 - (x - limite) / limite))
 
 
 def note_plancher(x, minimum):
+    """100 au-dessus du minimum. La droite part de 1 (un seul pari = 0)."""
     if x >= minimum:
         return 100.0
     return max(0.0, 100 * (x - 1) / (minimum - 1))
 
 
 def paris_ajustes(contributions):
+    """Nombre effectif de paris = 1 / somme des contributions au carré (Herfindahl),
+    en excluant les FNB larges."""
     somme = sum(c ** 2 for s, c in contributions.items() if s not in FNB_LARGES)
     return PARIS_PLAFOND if somme < EPS else min(PARIS_PLAFOND, 1 / somme)
 
@@ -101,7 +122,7 @@ def verdict(score):
 
 # ----------------------------------------------------------- étape 4 : alertes
 def rendement_requis(capital, cotisation_annuelle, annees, montant_vise):
-    """Rendement annuel r tel que la valeur future atteint le montant visé."""
+    """Rendement annuel r tel que la valeur future atteint le montant visé (dichotomie)."""
     def valeur_future(r):
         croissance = (1 + r) ** annees
         rente = annees if abs(r) < EPS else (croissance - 1) / r
@@ -112,7 +133,7 @@ def rendement_requis(capital, cotisation_annuelle, annees, montant_vise):
         return haut
     if valeur_future(bas) > montant_vise:
         return bas
-    for _ in range(100):  # dichotomie
+    for _ in range(100):
         milieu = (bas + haut) / 2
         if valeur_future(milieu) < montant_vise:
             bas = milieu
@@ -145,7 +166,8 @@ def alertes(mesures, profil, n):
     plafond = cible("crypto_max", n)
     if profil.get("crypto", "oui") == "oui" and crypto > plafond + EPS:
         liste.append(_alerte("CRYPTO_PLAFOND", "avertissement",
-            f"Les cryptoactifs représentent {pct(crypto)} du portefeuille. Le plafond retenu pour ce profil est de {pct(plafond)}."))
+            f"Les cryptoactifs représentent {pct(crypto)} du portefeuille. "
+            f"Le plafond retenu pour ce profil est de {pct(plafond)}."))
 
     hors_fnb = {s: c for s, c in mesures["contributions"].items() if s not in FNB_LARGES}
     if hors_fnb:
@@ -153,7 +175,8 @@ def alertes(mesures, profil, n):
         plafond = cible("titre_max", n)
         if hors_fnb[titre] > plafond + EPS:
             liste.append(_alerte("TITRE_DOMINANT", "avertissement",
-                f"{titre} porte {pct(hors_fnb[titre])} du risque du portefeuille. Le plafond retenu pour ce profil est de {pct(plafond)}."))
+                f"{titre} porte {pct(hors_fnb[titre])} du risque du portefeuille. "
+                f"Le plafond retenu pour ce profil est de {pct(plafond)}."))
 
     plafond = cible("secteur_max", n)
     for s, w in secteurs.items():
@@ -166,7 +189,8 @@ def alertes(mesures, profil, n):
     if profil["risque"] > capacite(profil["horizon_annees"]):
         liste.append(_alerte("PROFIL_CONTRADICTOIRE", "avertissement",
             f"La tolérance déclarée (niveau {nombre(profil['risque'])}) dépasse ce que permet un horizon de "
-            f"{nombre(profil['horizon_annees'])} ans (niveau {capacite(profil['horizon_annees'])}). Le niveau {nombre(n)} est utilisé."))
+            f"{nombre(profil['horizon_annees'])} ans (niveau {capacite(profil['horizon_annees'])}). "
+            f"Le niveau {nombre(n)} est utilisé."))
 
     declaree = profil.get("perte_max_toleree")
     if declaree is not None and declaree < 0.5 * cible("perte_max", profil["risque"]):
@@ -209,6 +233,7 @@ def evaluer(mesures, profil):
         hypotheses.append("Exclusions ESG approximées par secteur, sans cote ESG, et sans voir le contenu des FNB larges.")
 
     vol, perte = mesures["volatilite"], mesures["perte_max"]
+    # On arrondit chaque note avant le score pour que le calcul affiché tombe juste.
     n1 = round(note_plage(vol, a, b, penaliser_bas=objectif != "preservation"))
     n2 = round(note_plafond(perte, limite))
     n3 = round(note_plancher(paris, minimum))
@@ -321,7 +346,7 @@ def simuler(portefeuille, changement, profil, analyser):
         "avant": avant,
         "apres": apres,
         "ameliore": ameliore,
-        "degrade": degrade,
+        "degrade": degrade,  # obligatoire, même vide : on montre le compromis
         "phrase": _phrase(changement, portefeuille, avant, apres),
         "hypotheses": hypotheses,
     }
