@@ -698,7 +698,7 @@ def resultats():
     resultat = evaluer(mesures, profil)
 
     # ---- le verdict
-    # Le score sur toute la largeur, puis les trois notes sous lui : les quatre chiffres sur une
+    # Le score sur toute la largeur, puis les quatre notes sous lui : les quatre chiffres sur une
     # seule ligne se serraient, et le verdict se lisait aussi petit que le reste.
     st.header("Le verdict", divider="gray")
     with st.container(border=True):

@@ -31,7 +31,8 @@ Le PDF et les diapositives des organisateurs sont dans `docs/enonce/`, avec un r
 
 - **Rendre les contrôles visibles** (piste « agent de gouvernance ») : `demander` renvoie une clé
   `controles` et une ligne `gouvernance` dans `outils_appeles`.
-- **Deux situations contrastées** dans la démo et la vidéo : un portefeuille, trois verdicts.
+- **Deux situations contrastées** dans la démo et la vidéo : un même portefeuille, deux profils, deux verdicts
+  (la page de résultats montre un seul profil ; « Modifier mes réponses » ramène au questionnaire).
 - **README et documentation technique** avec dépendances, sources de données et leurs conditions,
   configuration, reproduction, mécanisme d'explicabilité avec un exemple relié aux traces,
   validations, limites et améliorations.
@@ -54,7 +55,7 @@ Le PDF et les diapositives des organisateurs sont dans `docs/enonce/`, avec un r
 Les outils existants (ex. Wealthscope, offert par Banque Nationale Courtage direct) donnent la
 même note de diversification à tout le monde. Le nôtre mesure le portefeuille une fois, puis
 compare chaque mesure à une **cible qui dépend du profil**. Démo visée : un même portefeuille,
-trois verdicts différents pour Amira, Mateo et Robert.
+un verdict différent pour Amira, Mateo et Robert.
 
 ## Architecture
 
@@ -166,8 +167,8 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   poids dans `POIDS_AVEC_CRISE`) ; sans ces clés (fausse piste A), il garde les trois notes et les anciens poids. Un symbole hors des 31 actifs fait lever
   `ValueError` avec la liste des symboles non couverts ; `piste_a.symboles_non_couverts(portefeuille)`
   permet de les afficher avant d'appeler `analyser`.
-- `evaluer(mesures, profil)` -> `score` (0 à 100), `verdict`, `niveau_effectif`, `notes` (trois notes
-  avec valeur, cible, note, poids, explication), `alertes` (code, gravite, message), `hypotheses`.
+- `evaluer(mesures, profil)` -> `score` (0 à 100), `verdict`, `niveau_effectif`, `notes` (quatre notes
+  avec valeur, cible, note, poids, explication ; trois si la mesure de crise manque), `alertes` (code, gravite, message), `hypotheses`.
   Depuis le 15 novembre : une alerte de gravité `contrainte` (secteur exclu, crypto refusée) plafonne le
   verdict à `a_surveiller` même si le score dépasse 80 ; `raison_verdict` le dit (sinon `None`).
 - `simuler(portefeuille, changement, profil, analyser)` -> `avant`, `apres`, `ameliore`, `degrade`,
@@ -225,7 +226,7 @@ les cibles de la piste B. Après le MVP : ratio de diversification, corrélation
 
 ## Piste B · Profil et score : ce qu'il reste à faire
 
-Le fichier `piste_b.py` est **écrit et testé** : cibles par profil, trois notes, score, huit
+Le fichier `piste_b.py` est **écrit et testé** : cibles par profil, quatre notes, score, huit
 alertes, `simuler`, `proposer_scenarios`. Le détail des formules est dans le guide de la piste B.
 
 - Test de référence : avec les fausses mesures du guide, les scores sont 82 (Amira), 45 (Mateo), 21 (Robert).
@@ -241,13 +242,13 @@ alertes, `simuler`, `proposer_scenarios`. Le détail des formules est dans le gu
 
 ## Piste D · Interface et livrables : ce qu'il reste à faire
 
-Le fichier `app.py` est **écrit** : barre latérale (persona, formulaire, CSV), onglets Diagnostic,
-Scénarios et Discussion. Sa logique a été testée avec un substitut de Streamlit, pas dans Streamlit.
+Le fichier `app.py` est **écrit et testé dans Streamlit** : un questionnaire plein écran (persona ou réponses
+personnalisées, portefeuille éditable ou CSV), puis une page de résultats (verdict et quatre notes, ce que vous
+détenez, d'où vient le risque avec l'onglet « En cas de crise (2022) », alertes, scénarios avec leur onglet de
+crise, hypothèses, discussion avec l'agent). Calculs mis en cache (`st.cache_data`).
 
-- Premier lancement réel : `pip install streamlit pandas numpy boto3`, puis `python -m streamlit run app.py`.
-  Le graphique « Poids et part du risque » est en Altair (natif Streamlit), plus matplotlib.
-- Brancher les vraies pistes en changeant une ligne d'import en haut de `app.py`, une piste à la fois.
-- Afficher les symboles non couverts renvoyés par la piste A.
+- Lancement : `pip install -r requirements.txt`, puis `python -m streamlit run app.py` (`python3` sur Mac).
+  Graphiques en Altair (natif Streamlit).
 - Livrables : vidéo d'environ 5 minutes (deux personas contrastés), one-pager d'une page,
   documentation technique, README. Le plan de chacun est dans le guide de la piste D.
 
@@ -309,14 +310,14 @@ Un fichier `piste_c.py` qui expose `demander`. À l'intérieur :
   « AWSSDKPandas », déploiement par `python aws/deployer_lambda.py`, à relancer après toute modification
   de `piste_a.py`, `piste_b.py`, `donnees.py` ou `aws/lambda_outils.py`) ; **S3** fournit les données ;
   **CloudWatch** garde les traces. Si Lambda est injoignable, l'agent calcule en local et le dit dans
-  `limites` ; `OUTILS_LAMBDA=0` force le calcul local. Les onglets Diagnostic et Scénarios de
-  l'interface calculent en local avec le même code, pour réagir sans attente aux réglages du profil.
+  `limites` ; `OUTILS_LAMBDA=0` force le calcul local. Le diagnostic et les scénarios de la page de
+  résultats calculent en local avec le même code, pour réagir sans attente aux réglages du profil.
 
 ## Ce qui n'est pas encore vérifié
 
 - Les seuils de `piste_b.py` sont des hypothèses de l'équipe, à calibrer avec les trois portefeuilles
   de référence de `python piste_a.py`.
-- Les livrables de la piste D (vidéo, one-pager, documentation, README) ne sont pas commencés.
+- README complet et `requirements.txt` faits le 15 novembre ; documentation technique, one-pager et vidéo à faire.
 - Ce fichier est régénéré de temps en temps hors du dépôt : **repartir toujours de la version dans Git**,
   sinon les mises à jour d'état des autres pistes sont perdues.
 
