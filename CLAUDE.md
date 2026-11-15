@@ -57,14 +57,15 @@ Quatre pistes en parallèle :
 
 | Piste | Livre | État |
 |---|---|---|
-| A · Calculs | `analyser(portefeuille)` -> mesures | En cours chez un collègue. En attendant : `faux.py` |
-| B · Profil et score | `evaluer`, `simuler`, `proposer_scenarios` | **Écrit et testé** : `piste_b.py` |
-| C · Agent et AWS | `demander(texte, portefeuille, profil)` | À faire |
-| D · Interface | `app.py` (Streamlit) | Écrit, pas encore lancé dans le vrai Streamlit |
+| A · Calculs | `analyser(portefeuille)` -> mesures | **Écrit** : `piste_a.py` (moteur du collègue + `analyser` du contrat, données lues sur S3). Repris par Aziz. |
+| B · Profil et score | `evaluer`, `simuler`, `proposer_scenarios` | **Écrit et testé** : `piste_b.py`. Cibles à calibrer avec les vrais chiffres. |
+| C · Agent et AWS | `demander(texte, portefeuille, profil)` | **Écrit et testé** : `piste_c.py` (Bedrock, gouvernance, trace CloudWatch) |
+| D · Interface | `app.py` (Streamlit) | Écrit, pistes A et C branchées, lancé avec `python -m streamlit run app.py` |
 
 ## Les données : le dossier `alphaforge_starter`
 
-On utilise le jeu de départ fourni par les organisateurs, copié dans `data/alphaforge_starter/`.
+On utilise le jeu de départ fourni par les organisateurs, copié dans `alphaforge_starter/` à la racine
+du dépôt et déposé sur S3 sous `s3://alphaforge-<compte>-donnees/alphaforge_starter/` (voir `donnees.py`).
 Ce sont déjà des données Yahoo Finance (téléchargées avec `yfinance` le 13 novembre 2026), plus
 la Banque du Canada et FRED. **Ne pas rappeler Yahoo en direct** : les valeurs de `adj_close`
 changent à chaque téléchargement, donc les résultats ne seraient plus reproductibles. Pour ajouter
@@ -118,7 +119,14 @@ Correspondance entre `assets_universe.csv` et les noms du contrat (à appliquer 
 FNB traités comme « larges » dans `piste_b.py` : XIU.TO, SPY, ESGV, XBB.TO, ZST.TO, AGG.
 QQQ, TLT et GLD n'y sont pas.
 
-Pour la piste C : ces fichiers vont sur S3, et les fonctions de calcul les lisent de là.
+Les fichiers sont sur S3 et les fonctions de calcul les lisent de là, par `donnees.py` :
+
+```python
+from donnees import charger, provenance
+prix = charger("prices_daily.csv")  # S3 d'abord, cache local, copie du dépôt en secours
+```
+
+`provenance()` renvoie une phrase par fichier lu. Si les données changent : `python donnees.py televerser`.
 
 ## Le contrat (formats à ne pas changer sans prévenir les autres)
 
@@ -134,7 +142,11 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   ```
   `risque` : 1 faible, 2 modéré, 3 élevé, demi-niveaux permis. `objectif` : preservation, equilibre, croissance.
 - `analyser(portefeuille)` -> `mesures` : `volatilite`, `perte_max`, `poids`, `contributions`,
-  `poids_par_classe`, `poids_par_secteur`, `classe_par_titre`, `secteur_par_titre`, `capital`.
+  `poids_par_classe`, `poids_par_secteur`, `classe_par_titre`, `secteur_par_titre`, `capital`,
+  plus `hypotheses` (liste de phrases : période, alignement des dates, devises, biais du survivant),
+  que `piste_c` reprend automatiquement dans `limites`. Un symbole hors des 31 actifs fait lever
+  `ValueError` avec la liste des symboles non couverts ; `piste_a.symboles_non_couverts(portefeuille)`
+  permet de les afficher avant d'appeler `analyser`.
 - `evaluer(mesures, profil)` -> `score` (0 à 100), `verdict`, `niveau_effectif`, `notes` (trois notes
   avec valeur, cible, note, poids, explication), `alertes` (code, gravite, message), `hypotheses`.
 - `simuler(portefeuille, changement, profil, analyser)` -> `avant`, `apres`, `ameliore`, `degrade`,
@@ -153,8 +165,11 @@ Lire `piste_b.py` et `faux.py` pour les formats exacts.
 
 ## Piste A · Calculs : ce qu'il faut faire
 
-Un fichier `piste_a.py` qui expose `analyser(portefeuille)` et lit `data/alphaforge_starter/`.
-État : **pas encore écrit**. En attendant, `faux.py` renvoie le même format avec des chiffres inventés.
+Un fichier `piste_a.py` qui expose `analyser(portefeuille)` et lit les données par `donnees.py`
+(S3, copie locale en secours). État : **écrit**. Le moteur de calcul du collègue (classe
+`PisteACalculations`) est conservé ; `analyser` l'enveloppe pour respecter le contrat. Les
+vérifications ci-dessous et les trois portefeuilles de référence se lancent avec `python piste_a.py`.
+`faux.py` reste le secours si `piste_a` ne s'importe pas.
 
 1. Charger `prices_daily.csv` et garder `adj_close` par date et par symbole.
 2. Convertir les actifs en USD vers le CAD avec `fx_usdcad_daily.csv` (dernier taux reporté les
@@ -237,18 +252,38 @@ Un fichier `piste_c.py` qui expose `demander`. À l'intérieur :
    Attention : pandas et numpy sont lourds à empaqueter pour Lambda.
 7. Fournir à la piste D un paragraphe sur l'architecture et une capture de trace pour la documentation.
 
+## État AWS (vérifié les 14 et 15 novembre 2026)
+
+- Compte d'événement AWS Workshop Studio (rôle `WSParticipantRole`), région `us-east-1`. Les identifiants
+  sont **temporaires** : une erreur « Identifiants refusés » ou `ExpiredToken` veut dire qu'il faut les
+  recopier depuis la page de l'événement dans `~/.aws/credentials`, pas que le code est cassé.
+- Modèle : `us.anthropic.claude-opus-5-5` (profil d'inférence, environ 10 s par réponse). Changer avec la
+  variable `MODELE_BEDROCK`, par exemple `us.anthropic.claude-sonnet-5-5` pour aller plus vite.
+- Ressources : seau S3 `alphaforge-<compte>-donnees` (données sous `alphaforge_starter/`), Lambda
+  `alphaforge-bonjour`, rôle IAM `alphaforge-lambda-role`, groupe CloudWatch `/alphaforge/agent` (trace de l'agent).
+- Utilisés par l'application : Bedrock, CloudWatch Logs, S3. Lambda est prouvé mais pas encore utilisé
+  pour les calculs. Pour la grille AWS, un service non utilisé ne compte pas.
+
 ## Ce qui n'est pas encore vérifié
 
-- Aucun appel AWS n'a encore été fait. L'identifiant du modèle et la région sont à confirmer.
-- `app.py` n'a pas été lancé dans le vrai Streamlit (sa logique a été testée avec un substitut).
-- `faux.py` contient des chiffres inventés. Les scores changeront avec la vraie piste A.
-- Les seuils de `piste_b.py` sont des hypothèses de l'équipe, à calibrer sur trois portefeuilles de référence.
+- Les seuils de `piste_b.py` sont des hypothèses de l'équipe, à calibrer avec les trois portefeuilles
+  de référence de `python piste_a.py`.
+- Les livrables de la piste D (vidéo, one-pager, documentation, README) ne sont pas commencés.
+- Ce fichier est régénéré de temps en temps hors du dépôt : **repartir toujours de la version dans Git**,
+  sinon les mises à jour d'état des autres pistes sont perdues.
 
 ## Fichiers de ce dossier
 
+- `piste_a.py` : mesures du portefeuille à partir des vraies données (moteur du collègue + `analyser`).
 - `piste_b.py` : profil, score, alertes, scénarios. Testé : redonne 97, 64 et 30 sur l'exemple du guide.
-- `faux.py` : fausses pistes A et C.
-- `app.py` : interface Streamlit. Lancer avec `streamlit run app.py`.
+- `piste_c.py` : l'agent (boucle Converse, quatre outils, gouvernance, trace). Démo : `python piste_c.py`.
+- `donnees.py` : lecture des données depuis S3 avec cache local, et téléversement.
+- `faux.py` : fausse piste A de secours (sa fausse piste C n'est plus utilisée).
+- `app.py` : interface Streamlit. Lancer avec `python -m streamlit run app.py`. Passe l'historique du chat à `demander`.
+- `preuves_aws/` : les trois preuves (Bedrock, S3, Lambda + CloudWatch), relançables.
+- `documentation_piste_c.md` : paragraphe d'architecture et capture de trace pour la piste D.
+- `index.html`, `styles.css` : maquette du guide de la piste A, venue de la branche `PARTIE-A`. Pas du code
+  de l'application : à déplacer dans `docs/` ou à retirer.
 
 ## Documents de référence
 

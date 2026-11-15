@@ -522,6 +522,10 @@ def demander(texte, portefeuille, profil, historique=None):
         reponse = reponse_de_secours(portefeuille, profil, trace)
 
     limites += _hypotheses(resultats)
+    try:  # les hypothèses des données (période, devises, source S3) : la piste B ne les fait pas suivre
+        limites += analyser(portefeuille).get("hypotheses", [])
+    except Exception as e:
+        limites.append(f"Les mesures du portefeuille n'ont pas pu être calculées : {e}")
     if SOURCE_MESURES == "faux":
         limites.append("Mesures issues de faux.py (chiffres inventés) : la piste A n'est pas encore branchée.")
     limites = list(dict.fromkeys(limites))

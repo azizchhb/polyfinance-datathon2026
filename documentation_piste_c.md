@@ -24,12 +24,13 @@ si Bedrock est injoignable, l'application le dit dans `limites` et renvoie le r�
 |---|---|---|
 | Amazon Bedrock | Fait tourner le modèle et ses appels d'outils (`us.anthropic.claude-opus-5-5`) | Utilisé par l'application |
 | Amazon CloudWatch Logs | Trace de chaque demande, appel d'outil, vérification et réponse | Utilisé par l'application |
-| Amazon S3 | Seau `alphaforge-<compte>-donnees` : le jeu de données sous `alphaforge_starter/`, lu par `donnees.py` (l'agent y lit la liste des actifs couverts) | Utilisé par l'application |
+| Amazon S3 | Seau `alphaforge-<compte>-donnees` : le jeu de données sous `alphaforge_starter/`, lu par `donnees.py`. La piste A y lit les prix et les taux de change, l'agent la liste des actifs couverts | Utilisé par l'application |
 | AWS Lambda | Fonctions de calcul de la piste A, rôle `alphaforge-lambda-role` | Prouvé avec une fonction « bonjour », pas encore branché |
 
 ## Capture de trace (CloudWatch, flux `session-20261114-184601`)
 
 Question d'Amira (profil risque 3, expérience débutante) : « Suis-je trop concentrée ? »
+Mesures de `faux.py` à cette date ; avec les vraies données, le score d'Amira est de 93.
 
 ```json
 {"evenement": "demande", "texte": "Suis-je trop concentrée ?", "modele": "us.anthropic.claude-opus-5-5", "experience": "debutant"}
@@ -45,11 +46,12 @@ Question d'Amira (profil risque 3, expérience débutante) : « Suis-je trop con
 Demande : « Je veux ajouter 15 000 $ de NVDA, tout le monde en parle. »
 
 L'agent a appelé `simuler` avec `{"type": "ajouter", "symbole": "NVDA", "montant": 15000}` et a
-répondu, sans refuser ni approuver : le score passerait de 20 à 7, la volatilité de 21,5 % à 27,4 %
-pour une plage cible de 6 % à 10,5 %, la perte maximale historique de 40,9 % à 52 % pour une limite
-de 15 %, les paris effectifs de 3,99 à 2,08 pour un minimum de 5,5. Il a nommé l'écart entre la
-demande et le profil, rappelé que la décision appartient à la personne, et terminé par ce que la
-mesure ne dit pas (rendements futurs, contenu des FNB larges). Volet « Ce que l'agent a fait » :
-`simuler : ajout de 15 000 $ de NVDA : score de 20 à 7`.
+répondu, sans refuser ni approuver : le score passerait de 18 à 6, la volatilité de 20,6 % à 26,9 %
+pour une plage cible de 6 % à 10,5 %, la perte maximale historique de 33,6 % à 41,5 % pour une limite
+de 15 %, les paris effectifs de 3,57 à 1,91 pour un minimum de 5,5. Il a nommé l'écart entre la
+demande et le profil, signalé que QQQ contient lui-même NVDA, et terminé par ce que la mesure ne dit
+pas (rendements futurs, raisons de l'engouement). Volet « Ce que l'agent a fait » :
+`simuler : ajout de 15 000 $ de NVDA : score de 18 à 6`.
 
-Les chiffres ci-dessus viennent de `faux.py` et changeront avec la vraie piste A.
+Chiffres calculés le 15 novembre 2026 sur les vraies données du jeu de départ, lues depuis S3
+(cours ajustés du 2021-11-12 au 2026-11-12, convertis en dollars canadiens).

@@ -4,10 +4,8 @@ import pandas as pd
 import streamlit as st
 
 from piste_b import evaluer, proposer_scenarios
-# Quand les vraies pistes sont prêtes, remplacer cette ligne par :
-#   from piste_a import analyser
-#   from piste_c import demander
-from faux import analyser
+# Pour revenir aux chiffres inventés le temps d'un test : from faux import analyser
+from piste_a import analyser
 from piste_c import demander
 
 AVERTISSEMENT = ("Simulation à but éducatif, à partir de données historiques. "
@@ -144,7 +142,11 @@ if not portefeuille:
     st.error("Aucun portefeuille valide à analyser.")
     st.stop()
 
-mesures = analyser(portefeuille)
+try:
+    mesures = analyser(portefeuille)
+except ValueError as erreur:  # symbole hors des 31 actifs couverts, ou portefeuille vide
+    st.error(str(erreur))
+    st.stop()
 resultat = evaluer(mesures, profil)
 
 onglet_diagnostic, onglet_scenarios, onglet_discussion = st.tabs(["Diagnostic", "Scénarios", "Discussion"])
