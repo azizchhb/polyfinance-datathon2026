@@ -26,6 +26,7 @@ calculs locaux ; seul l'agent a besoin de Bedrock.
 | `app.py`, `piste_a.py`, `piste_b.py`, `piste_c.py`, `donnees.py` | Le code de l'application : interface, calculs, score, agent, données |
 | `aws/` | Déploiement de la fonction Lambda des outils, et les trois preuves AWS |
 | `data/alphaforge_starter/` | Jeu de départ des organisateurs (aussi sur S3) |
+| `data/portefeuilles/` | Portefeuilles d'exemple à déposer dans l'interface (CSV : `symbole,montant_cad`) |
 | `docs/` | Documentation technique et maquette du guide de la piste A |
 | `tests/` | Fausse piste A pour tester l'interface sans données |
 | `CLAUDE.md` | Le contexte complet du projet : règles, contrat entre pistes, état, AWS |

@@ -295,6 +295,8 @@ Dossiers :
 
 - `aws/` : `deployer_lambda.py` et `lambda_outils.py` (la fonction `alphaforge-outils`), `preuves/` (les trois preuves Bedrock, S3, Lambda, relançables).
 - `data/alphaforge_starter/` : le jeu de départ. `Claude outputs/` à l'intérieur est ignoré par Git.
+- `data/portefeuilles/` : portefeuilles d'exemple pour l'interface, CSV à deux colonnes `symbole,montant_cad`
+  (démo, équilibré 60/40, techno concentré, canadien avec énergie, et un cas de symbole non couvert).
 - `docs/` : `documentation_piste_c.md` (architecture et traces pour la piste D), `guide_piste_a/` (maquette HTML du guide de la piste A).
 - `tests/` : `faux.py`, fausse piste A aux chiffres inventés pour tester l'interface sans données.
 
