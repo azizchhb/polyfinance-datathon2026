@@ -13,7 +13,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from piste_a import analyser, symboles_non_couverts, trajectoire_crise_2022, univers
+from piste_a import analyser, symboles_non_couverts, trajectoire_crise_2022, trajectoire_periode, univers
 from piste_b import (MARGE_CONFORT, NOTE_LIMITE, appliquer, evaluer, nombre, nombre_de_scenarios, pct,
                      proposer_scenarios)
 from piste_c import demander
@@ -446,8 +446,9 @@ def graphique_crise(trajet, limite):
     return alt.layer(*couches).properties(height=380)
 
 
-def graphique_crise_comparee(actuel, scenario, limite):
-    """Le portefeuille actuel et le scénario rejoués pendant 2022, sur le même axe en dollars.
+def graphique_crise_comparee(actuel, scenario, limite, periode=False):
+    """Le portefeuille actuel et le scénario sur le même axe en dollars : pendant 2022 (par défaut),
+    ou sur toute la période du jeu (periode=True : axe en années, 2022 surlignée en gris).
 
     Deux séries : légende en haut et nom au bout de chaque ligne (l'identité ne repose jamais sur
     la seule couleur). Le portefeuille actuel est le contexte, en gris ; le scénario, en bleu.
@@ -471,8 +472,10 @@ def graphique_crise_comparee(actuel, scenario, limite):
     plus_haut = max(max(actuel["valeurs"]), max(scenario["valeurs"]))
     echelle = alt.Scale(domain=[plus_bas * 0.92, plus_haut * 1.04], nice=False)
     mois = "[" + ", ".join(f"'{m}'" for m in MOIS) + "][month(datum.value)]"
-    x = alt.X("date:T", title=None, axis=alt.Axis(labelExpr=mois, tickCount="month", labelFontSize=12,
-                                                     domain=False, ticks=False, grid=False, labelColor=douce))
+    etiquettes = "timeFormat(datum.value, '%Y')" if periode else mois
+    x = alt.X("date:T", title=None, axis=alt.Axis(labelExpr=etiquettes, tickCount="year" if periode else "month",
+                                                     labelFontSize=12, domain=False, ticks=False, grid=False,
+                                                     labelColor=douce))
     y = alt.Y("valeur:Q", title="Valeur (CAD)", scale=echelle,
               axis=alt.Axis(tickCount=4, labelExpr="replace(format(datum.value, ',.0f'), ',', ' ') + ' $'",
                             domain=False, ticks=False, gridOpacity=0.35, labelFontSize=12, titleFontSize=12,
@@ -494,6 +497,14 @@ def graphique_crise_comparee(actuel, scenario, limite):
               .encode(x=x, y=y, color=alt.Color("Série:N", sort=noms, scale=palette, legend=None))
               .transform_filter(survol))
     couches = [lignes, noms_fin, repere, points, cibles]
+    if periode:  # 2022 en fond gris, pour relier cet onglet à celui de la crise
+        bande = pd.DataFrame({"debut": [pd.Timestamp("2022-01-01")], "fin": [pd.Timestamp("2022-12-31")],
+                              "texte": ["Crise de 2022"]})
+        couches.insert(0, alt.Chart(bande).mark_rect(color=douce, opacity=0.12)
+                       .encode(x="debut:T", x2="fin:T"))
+        couches.insert(1, alt.Chart(bande).mark_text(align="left", baseline="top", dx=6, dy=6, fontSize=12,
+                                                     color=douce)
+                       .encode(x="debut:T", y=alt.value(0), text="texte:N"))
     if seuil:
         regle = pd.DataFrame({"date": [dates[0]], "valeur": [seuil],
                               "texte": [f"Votre limite : baisse de {pourcent(limite, 0)} ({dollars(seuil)})"]})
@@ -540,6 +551,36 @@ def afficher_crise_scenario(portefeuille, scenario, resultat):
                "2022. C'est une illustration, pas une preuve qu'il résisterait à une autre crise.")
 
 
+def signe(x):
+    """+12,3 % ou −4,5 %, pour une variation."""
+    return ("+" if x >= 0 else "−") + pourcent(abs(x))
+
+
+def afficher_periode_scenario(portefeuille, scenario):
+    """Onglet « Et sur cinq ans ? » : le portefeuille actuel et le scénario sur toute la période du jeu.
+    Un rendement passé et descriptif, qui montre ce que le scénario aurait coûté ou rapporté ; il
+    n'entre pas dans le score, qui ne mesure que le risque."""
+    actuel = periode_memo(portefeuille)
+    apres = periode_memo(appliquer(portefeuille, scenario["changement"]))
+    if actuel is None or apres is None:
+        st.info("Pas assez de dates communes pour rejouer toute la période.")
+        return
+    debut, fin = pd.Timestamp(actuel["debut"]), pd.Timestamp(actuel["fin"])
+    periode = f"Du {debut.day} {MOIS[debut.month - 1]} {debut.year} au {fin.day} {MOIS[fin.month - 1]} {fin.year}"
+    ecart = apres["valeur_fin"] - actuel["valeur_fin"]
+    st.markdown(md(
+        f"{periode}, avec les mêmes montants, le portefeuille actuel serait passé de "
+        f"{dollars(actuel['capital'])} à **{dollars(actuel['valeur_fin'])}** ({signe(actuel['variation'])}, soit "
+        f"{signe(actuel['variation_annuelle'])} par an) ; ce scénario, à **{dollars(apres['valeur_fin'])}** "
+        f"({signe(apres['variation'])}, soit {signe(apres['variation_annuelle'])} par an). Écart en fin de "
+        f"période : **{('+' if ecart >= 0 else '−') + dollars(abs(ecart))}** pour le scénario."))
+    st.altair_chart(graphique_crise_comparee(actuel, apres, None, periode=True), width="stretch")
+    st.warning("Rendement passé, sur une seule période de cinq ans : ce n'est pas une prévision, et une autre "
+               "période donnerait un autre résultat. Les 31 titres ont été choisis en 2026 parmi ceux qui sont "
+               "devenus gros (biais du survivant) : les portefeuilles concentrés sur ces titres en profitent ici. "
+               "Ce rendement n'entre pas dans le score, qui ne mesure que le risque.")
+
+
 # Calculs mémorisés : Streamlit relance tout le script à chaque clic et à chaque message envoyé à
 # l'agent. Les mêmes portefeuille et profil redonnent le même résultat, sans tout recalculer.
 @st.cache_data(show_spinner=False, max_entries=64)
@@ -555,6 +596,11 @@ def scenarios_memo(portefeuille, profil):
 @st.cache_data(show_spinner=False, max_entries=256)
 def trajectoire_memo(portefeuille):
     return trajectoire_crise_2022(portefeuille)
+
+
+@st.cache_data(show_spinner=False, max_entries=256)
+def periode_memo(portefeuille):
+    return trajectoire_periode(portefeuille)
 
 
 # ------------------------------------------------------------------ état et page
@@ -829,11 +875,14 @@ def resultats():
             texte.subheader(f"Scénario {numero}")
             texte.write(md(scenario["phrase"]))
             chiffre.metric("Score après", f"{apres} / 100", delta=apres - avant)
-            onglet_changements, onglet_crise_scenario = st.tabs(["Changements", "Et pendant la crise de 2022 ?"])
+            onglet_changements, onglet_crise_scenario, onglet_periode = st.tabs(
+                ["Changements", "Et pendant la crise de 2022 ?", "Et sur cinq ans ?"])
             with onglet_changements:
                 afficher_changements(scenario)
             with onglet_crise_scenario:
                 afficher_crise_scenario(portefeuille, scenario, resultat)
+            with onglet_periode:
+                afficher_periode_scenario(portefeuille, scenario)
             with st.expander("Hypothèses de ce scénario"):
                 for hypothese in scenario["hypotheses"]:
                     st.write("- " + md(hypothese))

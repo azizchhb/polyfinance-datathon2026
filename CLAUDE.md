@@ -186,6 +186,11 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   et sans répartition au prorata. Chaque scénario liste ses coûts dans `degrade` (montant déplacé, titres vendus
   en entier, concentration dans un seul titre, crypto acceptée qui diminue) : jamais vide. La cible de la note
   de crise est, comme celle de la perte, la plus petite entre la perte déclarée et le tableau.
+  Chaque scénario a trois onglets dans l'interface : « Changements », « Et pendant la crise de 2022 ? » et
+  « Et sur cinq ans ? ». Ce dernier appelle `piste_a.trajectoire_periode(portefeuille)` : valeur du portefeuille
+  actuel et du scénario sur toute la période, en dollars. C'est un rendement **passé et descriptif**, qui n'entre
+  pas dans le score (règle 4 respectée : aucun rendement espéré), affiché avec une mise en garde (une seule
+  période, biais du survivant, pas une prévision).
 - **`demander(texte, portefeuille, profil)`**, livré par la piste C :
   ```json
   {"reponse": "texte affiché dans le chat",

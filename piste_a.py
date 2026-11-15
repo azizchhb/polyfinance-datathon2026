@@ -244,6 +244,37 @@ def trajectoire_crise_2022(portefeuille):
     }
 
 
+def trajectoire_periode(portefeuille):
+    """Ce qu'aurait donné ce portefeuille, avec ses montants actuels, sur toute la période du jeu.
+
+    Pour l'onglet « Et sur cinq ans ? » des scénarios : un rendement passé, descriptif, qui n'entre
+    pas dans le score (aucun rendement espéré n'est utilisé). Pondérations constantes, départ = capital
+    actuel à la première date commune à tous les titres. Valeur en dollars jour après jour, valeur
+    finale, variation totale et variation annuelle équivalente.
+    """
+    montants = _montants(portefeuille)
+    capital = sum(montants.values())
+    ordre = list(montants)
+    poids = np.array([montants[s] / capital for s in ordre])
+    prix = prix_cad()[ordre].dropna()
+    rendements = (prix / prix.shift(1) - 1).dropna()
+    if len(rendements) < 30:
+        return None
+    valeurs = capital * np.concatenate([[1.0], np.cumprod(1 + rendements.values @ poids)])
+    dates = [str(prix.index[0].date())] + [str(d.date()) for d in rendements.index]
+    variation = float(valeurs[-1] / valeurs[0] - 1)
+    annees = (prix.index[-1] - prix.index[0]).days / 365.25
+    return {
+        "dates": dates,
+        "valeurs": [float(v) for v in valeurs],
+        "capital": float(capital),
+        "valeur_fin": float(valeurs[-1]),
+        "variation": variation,
+        "variation_annuelle": float((1 + variation) ** (1 / annees) - 1) if annees > 0 else 0.0,
+        "debut": dates[0], "fin": dates[-1],
+    }
+
+
 def analyser(portefeuille):
     """Mesure le portefeuille (symbole -> montant en CAD) et renvoie les mesures du contrat.
 
