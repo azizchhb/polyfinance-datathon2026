@@ -180,6 +180,11 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   finale. Nombre de scénarios fixé par `nombre_de_scenarios(evaluation)` : 3 si inadéquat (score < 60), 2 si
   à surveiller (60 à 79), 0 si adéquat (80 et plus), 1 si adéquat mais avec une contrainte violée. Des
   recherches de rechange comblent les doublons (deux scénarios menant au même portefeuille comptent pour un).
+  Secteurs exclus (ESG) : le montant libéré ne va que vers les obligations, l'or ou un FNB d'actions qui écarte
+  lui-même ces secteurs (`destinations_permises` : ESGV pour l'énergie seulement ; jamais XIU.TO, SPY ni QQQ),
+  et sans répartition au prorata. Chaque scénario liste ses coûts dans `degrade` (montant déplacé, titres vendus
+  en entier, concentration dans un seul titre, crypto acceptée qui diminue) : jamais vide. La cible de la note
+  de crise est, comme celle de la perte, la plus petite entre la perte déclarée et le tableau.
 - **`demander(texte, portefeuille, profil)`**, livré par la piste C :
   ```json
   {"reponse": "texte affiché dans le chat",

@@ -566,13 +566,16 @@ def consigne_de_correction(problemes):
             "Ne mentionne pas ce contrôle.")
 
 
+VERDICTS_LISIBLES = {"adequat": "adéquat", "a_surveiller": "à surveiller", "inadequat": "inadéquat"}
+
+
 def reponse_de_secours(portefeuille, profil, trace, resultats=None):
     """Réponse factuelle construite sans modèle de langage, à partir de evaluer."""
     r = evaluer(analyser(portefeuille), profil)
     trace.append({"outil": "evaluer", "resume": f"score de {r['score']} sur 100 (réponse de secours)"})
     if resultats is not None:
         resultats.append(json_simple(r))  # pour que le contrôle des nombres reconnaisse ces chiffres
-    lignes = [f"Score d'adéquation de {r['score']} sur 100, verdict : {r['verdict'].replace('_', ' ')}."]
+    lignes = [f"Score d'adéquation de {r['score']} sur 100, verdict : {VERDICTS_LISIBLES.get(r['verdict'], r['verdict'])}."]
     lignes += [n["explication"] for n in r["notes"]]
     lignes += [a["message"] for a in r["alertes"]]
     return " ".join(lignes)

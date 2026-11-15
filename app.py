@@ -508,7 +508,7 @@ def afficher_changements(scenario):
     """Onglet « Changements » d'un scénario : poids avant et après, ce qui s'améliore et se dégrade."""
     # Tableau des titres dont le poids change : plus lisible que la phrase dès 3 lignes.
     p0, p1 = scenario.get("poids_avant", {}), scenario.get("poids_apres", {})
-    lignes = [{"Titre": s, "Avant": f"{100 * p0.get(s, 0):.1f} %", "Après": f"{100 * p1.get(s, 0):.1f} %",
+    lignes = [{"Titre": s, "Avant": pourcent(p0.get(s, 0)), "Après": pourcent(p1.get(s, 0)),
                "Écart (points)": round(100 * (p1.get(s, 0) - p0.get(s, 0)), 1)}
               for s in dict.fromkeys(list(p0) + list(p1)) if abs(p1.get(s, 0) - p0.get(s, 0)) >= 0.005]
     if len(lignes) > 2:
@@ -525,8 +525,8 @@ def afficher_changements(scenario):
 
 def afficher_crise_scenario(portefeuille, scenario, resultat):
     """Onglet « Et pendant la crise de 2022 ? » : le portefeuille actuel et le scénario rejoués en 2022."""
-    actuel = trajectoire_crise_2022(portefeuille)
-    apres = trajectoire_crise_2022(appliquer(portefeuille, scenario["changement"]))
+    actuel = trajectoire_memo(portefeuille)
+    apres = trajectoire_memo(appliquer(portefeuille, scenario["changement"]))
     if actuel is None or apres is None:
         st.info("Pas de prix en 2022 pour l'un des titres : la crise ne peut pas être rejouée.")
         return
@@ -535,9 +535,26 @@ def afficher_crise_scenario(portefeuille, scenario, resultat):
     st.markdown(md(f"Baisse au pire moment : **{dollars(actuel['perte_dollars'])}** actuellement "
                    f"({pourcent(actuel['perte'])}), **{dollars(apres['perte_dollars'])}** dans ce scénario "
                    f"({pourcent(apres['perte'])})."))
-    st.altair_chart(graphique_crise_comparee(actuel, apres, limite), use_container_width=True)
+    st.altair_chart(graphique_crise_comparee(actuel, apres, limite), width="stretch")
     st.warning("Ce scénario a été trouvé à partir de ces mêmes données : il est normal qu'il ait mieux traversé "
                "2022. C'est une illustration, pas une preuve qu'il résisterait à une autre crise.")
+
+
+# Calculs mémorisés : Streamlit relance tout le script à chaque clic et à chaque message envoyé à
+# l'agent. Les mêmes portefeuille et profil redonnent le même résultat, sans tout recalculer.
+@st.cache_data(show_spinner=False, max_entries=64)
+def analyser_memo(portefeuille):
+    return analyser(portefeuille)
+
+
+@st.cache_data(show_spinner="Recherche des scénarios…", max_entries=64)
+def scenarios_memo(portefeuille, profil):
+    return proposer_scenarios(portefeuille, profil, analyser)
+
+
+@st.cache_data(show_spinner=False, max_entries=256)
+def trajectoire_memo(portefeuille):
+    return trajectoire_crise_2022(portefeuille)
 
 
 # ------------------------------------------------------------------ état et page
@@ -587,9 +604,10 @@ def questionnaire():
                    value=base.get("perte_max_toleree") is not None):
         perte = st.slider("Perte maximale tolérée (%)", 5, 60,
                           int(round(100 * (base.get("perte_max_toleree") or 0.20))), key=f"perte_{k}") / 100
-    exclus = st.multiselect("Secteurs à exclure (approximation ESG, par secteur)", SECTEURS,
+    exclus = st.multiselect("Secteurs à exclure (approximation ESG, par secteur)", SECTEURS, placeholder="Aucun",
                             default=base["exclure_secteurs"], key=f"exclus_{k}")
-    interet = st.multiselect("Secteurs d'intérêt", SECTEURS, default=base["secteurs_interet"], key=f"interet_{k}")
+    interet = st.multiselect("Secteurs d'intérêt", SECTEURS, default=base["secteurs_interet"], key=f"interet_{k}",
+                             placeholder="Aucun")
     # Pas de champ « montant à atteindre » dans le questionnaire : les clés restent dans le profil
     # (contrat), à vide. Un objectif chiffré écrit dans la discussion passe par l'agent, qui le
     # transmet à evaluer (voir piste_c).
@@ -673,7 +691,7 @@ def resultats():
         st.rerun()
 
     try:
-        mesures = analyser(portefeuille)
+        mesures = analyser_memo(portefeuille)
     except ValueError as erreur:
         st.error(str(erreur))
         st.stop()
@@ -705,7 +723,7 @@ def resultats():
     # côté, et la liste est de toute façon ce qu'on vient chercher juste après le dessin.
     st.header("Ce que vous détenez", divider="gray")
     colonne_anneau, colonne_liste = st.columns([3, 2], vertical_alignment="center")
-    colonne_anneau.altair_chart(beignet(mesures), use_container_width=True)
+    colonne_anneau.altair_chart(beignet(mesures), width="stretch")
     colonne_liste.markdown(liste_titres(mesures), unsafe_allow_html=True)
     if len(mesures["poids"]) > 6:
         st.caption("Part de chaque titre dans le capital. Les lignes au-delà des cinq plus "
@@ -722,7 +740,7 @@ def resultats():
     onglet_graphique, onglet_tableau, onglet_crise = st.tabs(
         ["Graphique", "Tableau", "En cas de crise (2022)"])
     with onglet_graphique:
-        st.altair_chart(graphique(mesures), use_container_width=True)
+        st.altair_chart(graphique(mesures), width="stretch")
         st.caption("Quand la barre orange dépasse la bleue, le titre pèse plus lourd dans le "
                    "risque que dans le capital.")
     with onglet_tableau:
@@ -735,7 +753,7 @@ def resultats():
             })
         st.caption("Les mêmes chiffres que le graphique, lisibles sans couleur ni survol.")
     with onglet_crise:
-        trajet = trajectoire_crise_2022(portefeuille)
+        trajet = trajectoire_memo(portefeuille)
         if trajet is None:
             st.info("Ce portefeuille n'a pas de prix en 2022 : la crise ne peut pas être rejouée.")
         else:
@@ -757,7 +775,7 @@ def resultats():
                                "à la crise pour ce niveau de risque (choix de l'équipe).")
             c3.metric("Valeur fin 2022", dollars(trajet["valeur_fin"]),
                       delta=dollars(trajet["valeur_fin"] - trajet["capital"]))
-            st.altair_chart(graphique_crise(trajet, limite), use_container_width=True)
+            st.altair_chart(graphique_crise(trajet, limite), width="stretch")
             a, b = trajet["part_effacee_cinq_ans"], trajet["part_effacee_2022"]
             constat = ("La diversification a moins protégé pendant la crise : les titres se sont mis à baisser "
                        "ensemble." if b < a - 0.02 else "La diversification a tenu pendant la crise.")
@@ -780,7 +798,7 @@ def resultats():
     st.header("Scénarios fictifs", divider="gray")
     st.caption("Des changements calculés à partir du portefeuille, avec ce qui s'améliore et ce qui se dégrade. "
                "L'outil ne dit jamais quoi faire : la décision vous appartient. " + AVERTISSEMENT)
-    scenarios = proposer_scenarios(portefeuille, profil, analyser)
+    scenarios = scenarios_memo(portefeuille, profil)
     voulu = nombre_de_scenarios(resultat)
     contrainte = any(a["gravite"] == "contrainte" for a in resultat["alertes"])
     # Le nombre de scénarios suit le verdict brut du score : on dit pourquoi, pour qu'il ne paraisse pas arbitraire.

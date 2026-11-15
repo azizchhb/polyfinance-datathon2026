@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # la racine : piste_b.py
 
 from piste_b import (evaluer, simuler, proposer_scenarios, note_plage, note_plancher, note_plafond,
-                     paris_ajustes, niveau_effectif, appliquer)
+                     paris_ajustes, niveau_effectif, appliquer, destinations_permises)
 
 # Fausses mesures du guide (page 2)
 MESURES = {
@@ -98,16 +98,41 @@ def fausse_analyser(portefeuille):
 def test_simuler_et_scenarios():
     portefeuille = {"SPY": 30000, "NVDA": 10000, "BTC-USD": 10000}
     res = simuler(portefeuille, {"type": "retirer", "symbole": "BTC-USD"}, MATEO, fausse_analyser)
-    assert "alerte levée : CRYPTO_REFUSEE" in res["ameliore"]
+    assert "Alerte levée : crypto refusée par le profil" in res["ameliore"]
     assert isinstance(res["degrade"], list)
     assert res["phrase"].startswith("Scénario fictif")
     scenarios = proposer_scenarios(portefeuille, MATEO, fausse_analyser)
     assert scenarios
     for s in scenarios:  # chaque scénario sort la crypto que Mateo refuse
         assert "BTC-USD" not in s["poids_apres"]
-        assert "alerte levée : CRYPTO_REFUSEE" in s["ameliore"]
+        assert "Alerte levée : crypto refusée par le profil" in s["ameliore"]
         assert abs(sum(s["poids_apres"].values()) - 1) < 1e-9
     assert len({str(s["changement"]) for s in scenarios}) == len(scenarios)  # tous différents
+
+
+
+def test_destinations_esg():
+    # sans exclusion : toutes les destinations ; énergie exclue : ESGV oui, XIU.TO et SPY non ;
+    # finance exclue : aucun FNB d'actions, seulement obligations et or
+    assert "XIU.TO" in destinations_permises({"exclure_secteurs": []})
+    energie = destinations_permises({"exclure_secteurs": ["energie"]})
+    assert "ESGV" in energie and "XIU.TO" not in energie and "SPY" not in energie and "XBB.TO" in energie
+    finance = destinations_permises({"exclure_secteurs": ["finance"]})
+    assert set(finance) <= {"XBB.TO", "ZST.TO", "AGG", "GLD"}
+
+
+def test_crise_suit_la_perte_declaree():
+    mesures = dict(MESURES, perte_crise_2022=0.12)
+    robert = dict(ROBERT, perte_max_toleree=0.10)
+    note = [n for n in evaluer(mesures, robert)["notes"] if n["nom"] == "resistance_crise"][0]
+    assert abs(note["cible"] - 0.10) < 1e-9  # la perte déclarée (10 %) l'emporte sur le tableau (16 %)
+
+
+def test_couts_toujours_visibles():
+    portefeuille = {"SPY": 30000, "NVDA": 10000, "BTC-USD": 10000}
+    res = simuler(portefeuille, {"type": "retirer", "symbole": "NVDA", "vers": "SPY"}, AMIRA, fausse_analyser)
+    assert any(l.startswith("Montant à déplacer") for l in res["degrade"])
+    assert any("vendu(s) en entier : NVDA" in l for l in res["degrade"])
 
 
 if __name__ == "__main__":

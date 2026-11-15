@@ -146,6 +146,15 @@ def dollars(x):
     return f"{x:,.0f}".replace(",", " ") + " $"
 
 
+LIBELLES_NOTES = {"niveau_de_risque": "Niveau de risque", "risque_de_perte": "Risque de perte",
+                  "diversification": "Diversification", "resistance_crise": "Résistance à la crise de 2022"}
+LIBELLES_ALERTES = {"CRYPTO_REFUSEE": "crypto refusée par le profil", "SECTEUR_EXCLU": "secteur exclu par le profil",
+                    "CRYPTO_PLAFOND": "crypto au-dessus du plafond", "TITRE_DOMINANT": "un titre porte trop de risque",
+                    "SECTEUR_DOMINANT": "un secteur pèse trop lourd", "PROFIL_CONTRADICTOIRE": "profil contradictoire",
+                    "PERTE_CONTRADICTOIRE": "perte tolérée contradictoire",
+                    "RENDEMENT_REQUIS_ELEVE": "rendement requis élevé"}
+
+
 def verdict(score):
     if score >= 80:
         return "adequat"
@@ -277,14 +286,19 @@ def evaluer(mesures, profil):
         score = round(w1 * n1 + w2 * n2 + w3 * n3)
         hypotheses.append(f"Poids des notes pour l'objectif {objectif} : {nombre(w1)}, {nombre(w2)}, {nombre(w3)} (choix de l'équipe).")
     else:
-        limite_crise = cible("crise_max", n)
+        # Comme pour la perte maximale : la perte déclarée, si elle est plus stricte, l'emporte.
+        limite_crise = cible("crise_max", n) if declaree is None else min(declaree, cible("crise_max", n))
         n4 = round(note_plafond(crise, limite_crise))
         w1, w2, w3, w4 = POIDS_AVEC_CRISE[objectif]
         score = round(w1 * n1 + w2 * n2 + w3 * n3 + w4 * n4)
         hypotheses.append(f"Poids des notes pour l'objectif {objectif} : {nombre(w1)}, {nombre(w2)}, {nombre(w3)}, "
                           f"{nombre(w4)} (choix de l'équipe).")
-        hypotheses.append(f"Perte tolérée pendant la crise de 2022 pour le niveau {nombre(n)} : {pct(limite_crise)} "
-                          "(choix de l'équipe, repère : un portefeuille 60/40 a perdu environ 14 % en 2022).")
+        if declaree is not None and declaree < cible("crise_max", n):
+            hypotheses.append(f"Perte tolérée pendant la crise de 2022 : {pct(limite_crise)}, la perte maximale déclarée "
+                              f"(plus stricte que les {pct(cible('crise_max', n))} retenus pour le niveau {nombre(n)}).")
+        else:
+            hypotheses.append(f"Perte tolérée pendant la crise de 2022 pour le niveau {nombre(n)} : {pct(limite_crise)} "
+                              "(choix de l'équipe, repère : un portefeuille 60/40 a perdu environ 14 % en 2022).")
 
     if vol > b:
         e1 = f"Volatilité de {pct(vol)}, au-dessus de la plage cible de {pct(a)} à {pct(b)}."
@@ -435,6 +449,33 @@ def _phrase(changement, portefeuille, avant, apres):
     return (f"Scénario fictif en {len(morceaux)} étape(s) : si " + " ; puis ".join(morceaux) + f", {fin}")
 
 
+def _couts(portefeuille, apres, changement, mesures_avant, mesures_apres, profil):
+    """Ce qu'un changement coûte, au-delà des notes : un scénario n'est jamais gratuit.
+    Montant déplacé, titres vendus en entier, concentration dans un seul titre, exposition
+    choisie par la personne qui diminue (crypto acceptée)."""
+    couts = []
+    t0, t1 = sum(portefeuille.values()), sum(apres.values())
+    w0 = {k: v / t0 for k, v in portefeuille.items()}
+    w1 = {k: v / t1 for k, v in apres.items()}
+    if changement["type"] != "ajouter":
+        deplace = sum(max(0.0, w1.get(k, 0) - w0.get(k, 0)) for k in set(w0) | set(w1))
+        if deplace >= 0.005:
+            couts.append(f"Montant à déplacer : {dollars(deplace * t0)} ({pct(deplace)} du portefeuille), "
+                         "frais et impôts non comptés")
+    vendus = sorted(k for k in portefeuille if apres.get(k, 0) <= 0)
+    if vendus:
+        couts.append(f"Titre(s) vendu(s) en entier : {', '.join(vendus)}")
+    plus_gros = max(w1, key=w1.get)
+    if w1[plus_gros] >= 0.40 and w1[plus_gros] > w0.get(plus_gros, 0) + 0.005:
+        couts.append(f"{plus_gros} porterait {pct(w1[plus_gros])} du capital à lui seul")
+    if profil.get("crypto", "oui") == "oui":
+        c0 = mesures_avant.get("poids_par_classe", {}).get("crypto", 0)
+        c1 = mesures_apres.get("poids_par_classe", {}).get("crypto", 0)
+        if c1 < c0 - 0.005:
+            couts.append(f"Cryptoactifs, acceptés par le profil : {pct(c0)} → {pct(c1)} du portefeuille")
+    return couts
+
+
 def simuler(portefeuille, changement, profil, analyser):
     mesures_avant = analyser(portefeuille)
     avant = evaluer(mesures_avant, profil)
@@ -445,19 +486,21 @@ def simuler(portefeuille, changement, profil, analyser):
     ameliore, degrade = [], []
     for x, y in zip(avant["notes"], apres["notes"]):
         if y["note"] != x["note"]:
-            ligne = f"{x['nom']} : {x['note']} → {y['note']}"
+            ligne = f"{LIBELLES_NOTES.get(x['nom'], x['nom'])} : {x['note']} → {y['note']}"
             (ameliore if y["note"] > x["note"] else degrade).append(ligne)
 
     codes_avant = {al["code"] for al in avant["alertes"]}
     codes_apres = {al["code"] for al in apres["alertes"]}
-    ameliore += [f"alerte levée : {c}" for c in sorted(codes_avant - codes_apres)]
-    degrade += [f"nouvelle alerte : {c}" for c in sorted(codes_apres - codes_avant)]
+    ameliore += [f"Alerte levée : {LIBELLES_ALERTES.get(c, c)}" for c in sorted(codes_avant - codes_apres)]
+    degrade += [f"Nouvelle alerte : {LIBELLES_ALERTES.get(c, c)}" for c in sorted(codes_apres - codes_avant)]
 
     for s in profil.get("secteurs_interet") or []:
         w0 = mesures_avant.get("poids_par_secteur", {}).get(s, 0)
         w1 = mesures_apres.get("poids_par_secteur", {}).get(s, 0)
         if w1 < w0 - 0.005:
-            degrade.append(f"poids du secteur d'intérêt {s} : {pct(w0)} → {pct(w1)}")
+            degrade.append(f"Secteur d'intérêt {s} : {pct(w0)} → {pct(w1)} du portefeuille")
+
+    degrade += _couts(portefeuille, portefeuille_apres, changement, mesures_avant, mesures_apres, profil)
 
     hypotheses = list(apres["hypotheses"])
     etapes = changement.get("etapes", [changement])
@@ -526,14 +569,29 @@ def _ecart(evaluation):
     return total
 
 
-def _candidats(portefeuille, destinations):
+# Ce que chaque FNB d'actions écarte lui-même. ESGV exclut les combustibles fossiles ; XIU.TO, SPY et
+# QQQ n'écartent rien. Les obligations et l'or ne sont pas des actions d'un secteur : toujours permis.
+FNB_ACTIONS_EXCLUSIONS = {"XIU.TO": set(), "SPY": set(), "QQQ": set(), "ESGV": {"energie"}}
+
+
+def destinations_permises(profil, destinations=None):
+    """Destinations du montant libéré compatibles avec les secteurs exclus du profil. Sans exclusion,
+    toutes. Avec exclusion, un FNB d'actions n'est gardé que s'il écarte lui-même tous ces secteurs."""
+    destinations = DESTINATIONS if destinations is None else destinations
+    exclus = set(profil.get("exclure_secteurs") or [])
+    if not exclus:
+        return list(destinations)
+    return [d for d in destinations if d not in FNB_ACTIONS_EXCLUSIONS or exclus <= FNB_ACTIONS_EXCLUSIONS[d]]
+
+
+def _candidats(portefeuille, destinations, prorata=True):
     """Tous les changements d'une étape : réduire de moitié ou retirer chaque ligne,
-    le montant libéré allant au prorata ou dans une destination."""
+    le montant libéré allant au prorata (si permis) ou dans une destination."""
     total = sum(portefeuille.values())
     liste = []
     for s, montant in portefeuille.items():
         w = montant / total
-        for vers in [None] + [d for d in destinations if d != s]:
+        for vers in ([None] if prorata else []) + [d for d in destinations if d != s]:
             if vers is None and len(portefeuille) == 1:
                 continue
             base = {"symbole": s, **({"vers": vers} if vers else {})}
@@ -553,10 +611,11 @@ def _admissible(mesures_avant, mesures_apres, eval_avant, eval_apres, profil):
                    for s in profil.get("secteurs_interet") or [])
 
 
-def _chemin(portefeuille, profil, analyser, max_etapes, destinations=DESTINATIONS):
+def _chemin(portefeuille, profil, analyser, max_etapes, destinations=None):
     """Recherche gloutonne. À chaque étape, on garde le changement qui réduit le plus la part
     en contrainte, puis qui monte le plus le score, puis qui réduit le plus l'écart aux cibles.
     Les étapes qui retirent une contrainte ne comptent pas dans max_etapes."""
+    destinations = destinations_permises(profil, destinations)
     courant = dict(portefeuille)
     mesures = analyser(courant)
     evaluation = evaluer(mesures, profil)
@@ -566,7 +625,8 @@ def _chemin(portefeuille, profil, analyser, max_etapes, destinations=DESTINATION
         if not contraint and (comptees >= max_etapes or evaluation["score"] >= SCORE_SUFFISANT):
             break
         meilleur = None
-        for c in _candidats(courant, destinations):
+        # Secteurs exclus : pas de prorata, qui gonflerait aussi les FNB d'indice déjà détenus.
+        for c in _candidats(courant, destinations, prorata=not profil.get("exclure_secteurs")):
             essai = appliquer(courant, c)
             m = analyser(essai)
             e = evaluer(m, profil)
@@ -599,6 +659,11 @@ def _scenario(portefeuille, etapes, profil, analyser):
         changement = {"type": "reallouer", "etapes_recherche": len(etapes),
                       "poids_cibles": {s: round(m / total, 4) for s, m in final.items() if m / total >= 0.0005}}
     resultat = simuler(portefeuille, changement, profil, analyser)
+    if profil.get("exclure_secteurs"):
+        resultat["hypotheses"].append(
+            "Secteurs exclus : le montant libéré ne va que vers des obligations, de l'or ou un FNB d'actions qui "
+            "écarte lui-même ces secteurs (ESGV écarte l'énergie). XIU.TO, SPY et QQQ sont écartés : ils contiennent "
+            "des entreprises de ces secteurs. Les obligations de sociétés peuvent en contenir aussi (contenu non analysé).")
     levees = _contraintes(resultat["avant"]) - _contraintes(resultat["apres"])
     return resultat if resultat["apres"]["score"] > resultat["avant"]["score"] or levees else None
 
@@ -637,7 +702,7 @@ def proposer_scenarios(portefeuille, profil, analyser, maximum=3):
         return etapes
 
     def variante():
-        autres = [d for d in DESTINATIONS if d not in utilisees]
+        autres = [d for d in destinations_permises(profil) if d not in utilisees]
         if not autres:
             return []
         etapes = _chemin(portefeuille, profil, analyser, MAX_ETAPES, autres)
