@@ -40,6 +40,12 @@ MODELE = os.environ.get("MODELE_BEDROCK", "us.anthropic.claude-opus-5-5")
 MAX_TOURS = 8            # appels au modèle par demande, outils compris
 MAX_CORRECTIONS = 2      # régénérations permises quand la gouvernance refuse une réponse
 MAX_JETONS_SORTIE = 4000
+# Où tournent les outils : sur AWS Lambda par défaut (fonction déployée par deployer_lambda.py),
+# avec repli automatique en local si Lambda est injoignable. OUTILS_LAMBDA=0 : local seulement.
+MODE_OUTILS = os.environ.get("OUTILS_LAMBDA", "1")
+FONCTION_LAMBDA = os.environ.get("FONCTION_LAMBDA", "alphaforge-outils")
+_lambda = None
+_lambda_indisponible = None  # première erreur d'infrastructure rencontrée, pour ne pas réessayer à chaque outil
 
 journal = logging.getLogger("piste_c")
 journal.setLevel(logging.INFO)
@@ -257,22 +263,70 @@ def resume_changement(c):
     return f"retrait de {c['symbole']}"
 
 
-def executer_outil(nom, args, portefeuille, profil):
-    """Renvoie (résultat, résumé d'une ligne pour le volet « Ce que l'agent a fait »)."""
+def client_lambda():
+    global _lambda
+    if _lambda is None:
+        _lambda = boto3.client("lambda", region_name=REGION,
+                               config=Config(retries={"max_attempts": 2}, read_timeout=70, connect_timeout=5))
+    return _lambda
+
+
+def executer_sur_lambda(nom, portefeuille, profil, changement=None):
+    """Exécute un outil dans la fonction Lambda. ValueError si l'outil a refusé (erreur métier),
+    RuntimeError ou erreur boto3 si c'est l'infrastructure qui a échoué."""
+    evenement = {"outil": nom, "portefeuille": portefeuille, "profil": profil}
+    if changement:
+        evenement["changement"] = changement
+    reponse = client_lambda().invoke(FunctionName=FONCTION_LAMBDA, Payload=json.dumps(evenement).encode("utf-8"))
+    charge = json.loads(reponse["Payload"].read())
+    if reponse.get("FunctionError"):
+        raise RuntimeError(f"la fonction Lambda a planté : {charge.get('errorMessage', charge)}")
+    if not charge.get("ok"):
+        raise ValueError(charge.get("erreur", "erreur inconnue"))
+    return charge["resultat"]
+
+
+def executer_localement(nom, portefeuille, profil, changement=None):
     if nom == "analyser":
-        r = analyser(portefeuille)
-        return r, f"{len(portefeuille)} titres analysés, capital de {dollars(r['capital'])}"
+        return analyser(portefeuille)
     if nom == "evaluer":
-        r = evaluer(analyser(portefeuille), profil)
-        return r, f"score de {r['score']} sur 100, verdict {r['verdict']}, {len(r['alertes'])} alerte(s)"
+        return evaluer(analyser(portefeuille), profil)
     if nom == "simuler":
-        changement = valider_changement(args, portefeuille, univers_couvert())
-        r = simuler(portefeuille, changement, profil, analyser)
-        return r, f"{resume_changement(changement)} : score de {r['avant']['score']} à {r['apres']['score']}"
-    if nom == "proposer_scenarios":
-        r = proposer_scenarios(portefeuille, profil, analyser)
-        return r, f"{len(r)} scénario(s) retenu(s)"
-    raise ValueError(f"outil inconnu : {nom}")
+        return simuler(portefeuille, changement, profil, analyser)
+    return proposer_scenarios(portefeuille, profil, analyser)
+
+
+def resume_outil(nom, r, portefeuille, changement=None):
+    """Une ligne pour le volet « Ce que l'agent a fait »."""
+    if nom == "analyser":
+        return f"{len(portefeuille)} titres analysés, capital de {dollars(r['capital'])}"
+    if nom == "evaluer":
+        return f"score de {r['score']} sur 100, verdict {r['verdict']}, {len(r['alertes'])} alerte(s)"
+    if nom == "simuler":
+        return f"{resume_changement(changement)} : score de {r['avant']['score']} à {r['apres']['score']}"
+    return f"{len(r)} scénario(s) retenu(s)"
+
+
+def executer_outil(nom, args, portefeuille, profil):
+    """Renvoie (résultat, résumé, lieu d'exécution). Lambda d'abord, local en repli."""
+    global _lambda_indisponible
+    if nom not in ("analyser", "evaluer", "simuler", "proposer_scenarios"):
+        raise ValueError(f"outil inconnu : {nom}")
+    changement = valider_changement(args, portefeuille, univers_couvert()) if nom == "simuler" else None
+
+    resultat, lieu = None, "local"
+    if MODE_OUTILS != "0" and _lambda_indisponible is None:
+        try:
+            resultat, lieu = executer_sur_lambda(nom, portefeuille, profil, changement), "AWS Lambda"
+        except (ClientError, BotoCoreError, RuntimeError) as e:  # infrastructure : on retombe en local
+            _lambda_indisponible = f"{type(e).__name__}: {e}"
+            journal.warning("Lambda indisponible, calcul local : %s", _lambda_indisponible)
+    if resultat is None:
+        resultat = executer_localement(nom, portefeuille, profil, changement)
+    resume = resume_outil(nom, resultat, portefeuille, changement)
+    if lieu == "AWS Lambda":
+        resume += " · calculé sur AWS Lambda"
+    return resultat, resume, lieu
 
 
 def _natif(objet):
@@ -477,11 +531,11 @@ def demander(texte, portefeuille, profil, historique=None):
                     appel = bloc["toolUse"]
                     nom, args = appel["name"], appel.get("input") or {}
                     try:
-                        resultat, resume = executer_outil(nom, args, portefeuille, profil)
+                        resultat, resume, lieu = executer_outil(nom, args, portefeuille, profil)
                         resultat = json_simple(resultat)
                         resultats.append(resultat)
                         trace.append({"outil": nom, "resume": resume})
-                        journaliser("outil", outil=nom, arguments=args, resume=resume)
+                        journaliser("outil", outil=nom, arguments=args, resume=resume, lieu=lieu)
                         contenu = {"json": resultat if isinstance(resultat, dict) else {"scenarios": resultat}}
                         retours.append({"toolResult": {"toolUseId": appel["toolUseId"], "content": [contenu]}})
                     except Exception as e:  # l'outil a échoué : on le dit, on n'invente pas
@@ -522,6 +576,8 @@ def demander(texte, portefeuille, profil, historique=None):
         reponse = reponse_de_secours(portefeuille, profil, trace)
 
     limites += _hypotheses(resultats)
+    if MODE_OUTILS != "0" and _lambda_indisponible and trace:
+        limites.append(f"Outils calculés localement : la fonction Lambda est injoignable ({_lambda_indisponible}).")
     try:  # les hypothèses des données (période, devises, source S3) : la piste B ne les fait pas suivre
         limites += analyser(portefeuille).get("hypotheses", [])
     except Exception as e:

@@ -260,9 +260,16 @@ Un fichier `piste_c.py` qui expose `demander`. À l'intérieur :
 - Modèle : `us.anthropic.claude-opus-5-5` (profil d'inférence, environ 10 s par réponse). Changer avec la
   variable `MODELE_BEDROCK`, par exemple `us.anthropic.claude-sonnet-5-5` pour aller plus vite.
 - Ressources : seau S3 `alphaforge-<compte>-donnees` (données sous `alphaforge_starter/`), Lambda
-  `alphaforge-bonjour`, rôle IAM `alphaforge-lambda-role`, groupe CloudWatch `/alphaforge/agent` (trace de l'agent).
-- Utilisés par l'application : Bedrock, CloudWatch Logs, S3. Lambda est prouvé mais pas encore utilisé
-  pour les calculs. Pour la grille AWS, un service non utilisé ne compte pas.
+  `alphaforge-outils` (les quatre outils de l'agent) et `alphaforge-bonjour` (preuve), rôle IAM
+  `alphaforge-lambda-role` avec lecture du seau, groupes CloudWatch `/alphaforge/agent` (trace de
+  l'agent) et `/aws/lambda/alphaforge-outils` (un JSON par appel d'outil).
+- Rôle de chaque service dans l'application : **Bedrock** fait tourner l'agent ; **Lambda** exécute
+  ses quatre outils avec le code des pistes A et B (pandas et numpy viennent de la couche AWS
+  « AWSSDKPandas », déploiement par `python deployer_lambda.py`, à relancer après toute modification
+  de `piste_a.py`, `piste_b.py`, `donnees.py` ou `lambda_outils.py`) ; **S3** fournit les données ;
+  **CloudWatch** garde les traces. Si Lambda est injoignable, l'agent calcule en local et le dit dans
+  `limites` ; `OUTILS_LAMBDA=0` force le calcul local. Les onglets Diagnostic et Scénarios de
+  l'interface calculent en local avec le même code, pour réagir sans attente aux réglages du profil.
 
 ## Ce qui n'est pas encore vérifié
 
@@ -278,6 +285,8 @@ Un fichier `piste_c.py` qui expose `demander`. À l'intérieur :
 - `piste_b.py` : profil, score, alertes, scénarios. Testé : redonne 97, 64 et 30 sur l'exemple du guide.
 - `piste_c.py` : l'agent (boucle Converse, quatre outils, gouvernance, trace). Démo : `python piste_c.py`.
 - `donnees.py` : lecture des données depuis S3 avec cache local, et téléversement.
+- `lambda_outils.py` : point d'entrée de la fonction Lambda `alphaforge-outils` (les quatre outils).
+- `deployer_lambda.py` : empaquette et déploie la fonction, puis fait un test de fumée.
 - `faux.py` : fausse piste A de secours (sa fausse piste C n'est plus utilisée).
 - `app.py` : interface Streamlit. Lancer avec `python -m streamlit run app.py`. Passe l'historique du chat à `demander`.
 - `preuves_aws/` : les trois preuves (Bedrock, S3, Lambda + CloudWatch), relançables.

@@ -7,10 +7,12 @@ Matériel pour la documentation de la piste D. État au 14 novembre 2026.
 L'interface Streamlit envoie la question, le portefeuille et le profil à la fonction `demander`
 (`piste_c.py`). Celle-ci ouvre une conversation avec Claude Opus 5.5 sur **Amazon Bedrock** (API
 Converse, via boto3) en lui déclarant quatre outils : `analyser`, `evaluer`, `simuler` et
-`proposer_scenarios`. Le modèle ne calcule jamais : il choisit un outil, le code Python l'exécute
-avec le portefeuille et le profil injectés par l'application (le modèle ne les retape pas), et le
-résultat lui est renvoyé. La boucle continue jusqu'à une réponse en texte, avec un maximum de huit
-tours. Avant l'affichage, un contrôle de gouvernance écrit en code vérifie deux choses : l'absence
+`proposer_scenarios`. Le modèle ne calcule jamais : il choisit un outil, et l'outil s'exécute dans
+une fonction **AWS Lambda** (`alphaforge-outils`) qui embarque le code des pistes A et B, lit les
+cours et les taux de change sur **Amazon S3**, et renvoie le résultat. Le portefeuille et le profil
+sont injectés par l'application, le modèle ne les retape pas. Si Lambda est injoignable, l'application
+exécute le même code en local et le signale dans `limites`. La boucle continue jusqu'à une réponse en
+texte, avec un maximum de huit tours. Avant l'affichage, un contrôle de gouvernance écrit en code vérifie deux choses : l'absence
 de vocabulaire prescriptif (achète, vends, tu devrais, recommande, conseille) et la présence de
 chaque nombre cité dans les résultats des outils. En cas d'écart, la réponse est régénérée au plus
 deux fois, puis remplacée par un résumé factuel produit sans modèle. Chaque appel d'outil est ajouté
@@ -25,7 +27,7 @@ si Bedrock est injoignable, l'application le dit dans `limites` et renvoie le r�
 | Amazon Bedrock | Fait tourner le modèle et ses appels d'outils (`us.anthropic.claude-opus-5-5`) | Utilisé par l'application |
 | Amazon CloudWatch Logs | Trace de chaque demande, appel d'outil, vérification et réponse | Utilisé par l'application |
 | Amazon S3 | Seau `alphaforge-<compte>-donnees` : le jeu de données sous `alphaforge_starter/`, lu par `donnees.py`. La piste A y lit les prix et les taux de change, l'agent la liste des actifs couverts | Utilisé par l'application |
-| AWS Lambda | Fonctions de calcul de la piste A, rôle `alphaforge-lambda-role` | Prouvé avec une fonction « bonjour », pas encore branché |
+| AWS Lambda | Fonction `alphaforge-outils` : les quatre outils de l'agent (code des pistes A et B, couche AWS pandas), rôle `alphaforge-lambda-role` | Utilisé par l'application |
 
 ## Capture de trace (CloudWatch, flux `session-20261114-184601`)
 
@@ -40,6 +42,25 @@ Mesures de `faux.py` à cette date ; avec les vraies données, le score d'Amira 
 {"evenement": "verification", "problemes": [], "correction": 0}
 {"evenement": "reponse", "duree_s": 12.2, "outils": 1, "corrections": 0}
 ```
+
+## Capture de trace de la fonction Lambda (CloudWatch, `/aws/lambda/alphaforge-outils`, 15 novembre 2026)
+
+Une ligne JSON par outil exécuté, suivie du rapport de facturation d'AWS. Le premier appel paie
+le démarrage à froid (chargement de pandas et lecture des données sur S3), les suivants durent
+quelques millisecondes.
+
+```
+{"outil": "evaluer", "ok": true, "duree_ms": 995, "titres": 5}
+REPORT Duration: 1005.38 ms  Billed Duration: 3730 ms  Memory Size: 1024 MB  Max Memory Used: 220 MB  Init Duration: 2724.56 ms
+{"outil": "simuler", "ok": true, "duree_ms": 10, "titres": 5}
+REPORT Duration: 12.14 ms  Billed Duration: 13 ms  Memory Size: 1024 MB  Max Memory Used: 220 MB
+{"outil": "evaluer", "ok": false, "duree_ms": 0, "titres": 2}
+{"outil": "proposer_scenarios", "ok": true, "duree_ms": 120, "titres": 5}
+```
+
+La ligne `"ok": false` est un portefeuille contenant PLTR, hors des 31 actifs : l'outil renvoie
+l'erreur à l'agent au lieu d'inventer une mesure. Dans l'interface, le volet « Ce que l'agent a
+fait » affiche par exemple `evaluer : score de 18 sur 100, verdict inadequat, 3 alerte(s) · calculé sur AWS Lambda`.
 
 ## Le test de Robert (profil risque 1,5, horizon 4 ans, préservation)
 
