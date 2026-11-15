@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+.aws/
+.cache_donnees/
+alphaforge_starter/Claude outputs/
