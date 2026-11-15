@@ -24,6 +24,18 @@ pourquoi de chaque étape, pas seulement la commande.
 - **AWS est une condition d'admissibilité** : AWS doit contribuer réellement et de façon démontrable.
   Ne pas multiplier les services pour impressionner ; chaque service doit avoir un rôle.
 
+## L'énoncé officiel
+
+Le PDF et les diapositives des organisateurs sont dans `docs/enonce/`, avec un résumé fidèle
+(`resume_enonce.md`). Trois exigences qui vont au-delà de ce fichier :
+
+- **Rendre les contrôles visibles** (piste « agent de gouvernance ») : `demander` renvoie une clé
+  `controles` et une ligne `gouvernance` dans `outils_appeles`.
+- **Deux situations contrastées** dans la démo et la vidéo : un portefeuille, trois verdicts.
+- **README et documentation technique** avec dépendances, sources de données et leurs conditions,
+  configuration, reproduction, mécanisme d'explicabilité avec un exemple relié aux traces,
+  validations, limites et améliorations.
+
 ## Règles à ne jamais enfreindre
 
 1. **Simulation seulement.** Aucune transaction réelle, aucune donnée bancaire réelle.

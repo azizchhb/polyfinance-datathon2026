@@ -436,14 +436,20 @@ def _connu(valeur, decimales, connus):
     return False
 
 
-def nombres_inconnus(texte, connus):
+def controler_nombres(texte, connus):
+    """(nombre de nombres cités, liste des nombres absents des résultats d'outils)."""
     corps = _RE_MARQUEUR_LISTE.sub("", texte)
-    inconnus = []
+    total, inconnus = 0, []
     for m in _RE_NOMBRE.finditer(corps):
+        total += 1
         valeur, decimales = _vers_nombre(m.group())
         if not _connu(valeur, decimales, connus) and m.group() not in inconnus:
             inconnus.append(m.group())
-    return inconnus
+    return total, inconnus
+
+
+def nombres_inconnus(texte, connus):
+    return controler_nombres(texte, connus)[1]
 
 
 def verifier(reponse, resultats, texte, portefeuille, profil, supplement=None):
@@ -465,10 +471,12 @@ def consigne_de_correction(problemes):
             "Ne mentionne pas ce contrôle.")
 
 
-def reponse_de_secours(portefeuille, profil, trace):
+def reponse_de_secours(portefeuille, profil, trace, resultats=None):
     """Réponse factuelle construite sans modèle de langage, à partir de evaluer."""
     r = evaluer(analyser(portefeuille), profil)
     trace.append({"outil": "evaluer", "resume": f"score de {r['score']} sur 100 (réponse de secours)"})
+    if resultats is not None:
+        resultats.append(json_simple(r))  # pour que le contrôle des nombres reconnaisse ces chiffres
     lignes = [f"Score d'adéquation de {r['score']} sur 100, verdict : {r['verdict'].replace('_', ' ')}."]
     lignes += [n["explication"] for n in r["notes"]]
     lignes += [a["message"] for a in r["alertes"]]
@@ -593,7 +601,7 @@ def demander(texte, portefeuille, profil, historique=None):
                 continue
             if problemes:
                 if any(p.startswith("mots interdits") for p in problemes):
-                    candidat = reponse_de_secours(portefeuille, profil, trace)
+                    candidat = reponse_de_secours(portefeuille, profil, trace, resultats)
                     limites.append("La réponse du modèle a été remplacée par un résumé factuel : elle gardait "
                                    "un vocabulaire prescriptif malgré deux corrections.")
                 for p in problemes:
@@ -603,12 +611,32 @@ def demander(texte, portefeuille, profil, historique=None):
             break
         else:
             limites.append(f"L'agent a atteint la limite de {MAX_TOURS} tours sans conclure.")
-            reponse = reponse_de_secours(portefeuille, profil, trace)
+            reponse = reponse_de_secours(portefeuille, profil, trace, resultats)
     except (ClientError, BotoCoreError) as e:
         code = getattr(e, "response", {}).get("Error", {}).get("Code", type(e).__name__)
         journaliser("bedrock_echec", code=code, erreur=str(e))
         limites.append(f"Bedrock injoignable ({code}) : réponse de secours calculée localement, sans modèle.")
-        reponse = reponse_de_secours(portefeuille, profil, trace)
+        reponse = reponse_de_secours(portefeuille, profil, trace, resultats)
+
+    # Les contrôles de gouvernance, rendus visibles : dans la trace et dans la sortie.
+    cites, non_verifies = controler_nombres(reponse, nombres_connus(resultats, texte, portefeuille, profil, supplement))
+    controles = {
+        "nombres_cites": cites,
+        "nombres_verifies": cites - sum(reponse.count(n) for n in non_verifies),
+        "nombres_non_verifies": non_verifies,
+        "mots_interdits": mots_interdits(reponse),
+        "regenerations": corrections,
+        "outils_echoues": sum(1 for t in trace if t["resume"].startswith("échec")),
+        "symboles_non_couverts": non_couverts,
+    }
+    bilan = f"{controles['nombres_verifies']} nombre(s) vérifié(s) contre les résultats des outils"
+    if non_verifies:
+        bilan += f", {len(non_verifies)} non vérifié(s)"
+    bilan += ", aucun mot prescriptif" if not controles["mots_interdits"] else ", vocabulaire prescriptif remplacé"
+    if corrections:
+        bilan += f", {corrections} régénération(s)"
+    trace.append({"outil": "gouvernance", "resume": bilan})
+    journaliser("gouvernance", **controles)
 
     limites += _hypotheses(resultats)
     if MODE_OUTILS != "0" and _lambda_indisponible and trace:
@@ -619,7 +647,7 @@ def demander(texte, portefeuille, profil, historique=None):
         limites.append(f"Les mesures du portefeuille n'ont pas pu être calculées : {e}")
     limites = list(dict.fromkeys(limites))
     journaliser("reponse", duree_s=round(time.time() - debut, 1), outils=len(trace), corrections=corrections)
-    return {"reponse": reponse, "outils_appeles": trace, "limites": limites}
+    return {"reponse": reponse, "outils_appeles": trace, "limites": limites, "controles": controles}
 
 
 # ------------------------------------------------------------ démonstration
