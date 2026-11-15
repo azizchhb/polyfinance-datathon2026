@@ -165,8 +165,13 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
 - `evaluer(mesures, profil)` -> `score` (0 à 100), `verdict`, `niveau_effectif`, `notes` (trois notes
   avec valeur, cible, note, poids, explication), `alertes` (code, gravite, message), `hypotheses`.
 - `simuler(portefeuille, changement, profil, analyser)` -> `avant`, `apres`, `ameliore`, `degrade`,
-  `phrase`, `hypotheses`. Types de changement : `plafonner`, `ajouter`, `retirer`.
+  `phrase`, `hypotheses`, et depuis le 15 novembre `poids_avant` et `poids_apres` (symbole -> poids).
+  Types de changement : `plafonner`, `ajouter`, `retirer` (`plafonner` et `retirer` acceptent `vers`, le titre
+  qui reçoit le montant libéré), `combiner` (`etapes`) et `reallouer` (`poids_cibles`, total inchangé).
 - `proposer_scenarios(portefeuille, profil, analyser)` -> liste d'au plus trois résultats de `simuler`.
+  Depuis le 15 novembre : recherche gloutonne de 1 à 6 changements (contraintes d'abord, puis score,
+  puis écart aux cibles), montant libéré envoyé vers un FNB large ou l'or ; trois variantes (complète,
+  autres destinations, légère en deux changements), présentées comme une réallocation finale.
 - **`demander(texte, portefeuille, profil)`**, livré par la piste C :
   ```json
   {"reponse": "texte affiché dans le chat",

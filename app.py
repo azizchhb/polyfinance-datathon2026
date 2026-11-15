@@ -625,6 +625,14 @@ def resultats():
             texte.subheader(f"Scénario {numero}")
             texte.write(md(scenario["phrase"]))
             chiffre.metric("Score après", f"{apres} / 100", delta=apres - avant)
+            # Tableau des titres dont le poids change : plus lisible que la phrase dès 3 lignes.
+            p0, p1 = scenario.get("poids_avant", {}), scenario.get("poids_apres", {})
+            lignes = [{"Titre": s, "Avant": f"{100 * p0.get(s, 0):.1f} %", "Après": f"{100 * p1.get(s, 0):.1f} %",
+                       "Écart (points)": round(100 * (p1.get(s, 0) - p0.get(s, 0)), 1)}
+                      for s in dict.fromkeys(list(p0) + list(p1)) if abs(p1.get(s, 0) - p0.get(s, 0)) >= 0.005]
+            if len(lignes) > 2:
+                lignes.sort(key=lambda l: l["Écart (points)"])
+                st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch")
             mieux, moins_bien = st.columns(2)
             mieux.markdown("**Ce qui s'améliore**")
             for ligne in scenario["ameliore"] or ["Rien"]:

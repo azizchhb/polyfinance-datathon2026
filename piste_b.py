@@ -269,7 +269,22 @@ def evaluer(mesures, profil):
 
 # -------------------------------------------------------- étape 5 : scénarios
 def appliquer(portefeuille, changement):
-    """Renvoie un nouveau portefeuille (symbole -> montant) sans modifier l'original."""
+    """Renvoie un nouveau portefeuille (symbole -> montant) sans modifier l'original.
+
+    Types : ajouter, plafonner, retirer, combiner (une liste `etapes` appliquées dans
+    l'ordre) et reallouer (`poids_cibles` : symbole -> poids final, total inchangé). Pour plafonner et retirer, `vers` (facultatif) désigne le titre qui
+    reçoit le montant libéré ; sans `vers`, il est réparti au prorata des autres lignes.
+    """
+    if changement["type"] == "reallouer":
+        cibles = {s: w for s, w in changement["poids_cibles"].items() if w > EPS}
+        somme, total = sum(cibles.values()), sum(portefeuille.values())
+        return {s: total * w / somme for s, w in cibles.items()}
+    if changement["type"] == "combiner":
+        nouveau = dict(portefeuille)
+        for etape in changement["etapes"]:
+            nouveau = appliquer(nouveau, etape)
+        return nouveau
+
     nouveau = dict(portefeuille)
     total = sum(nouveau.values())
     symbole = changement["symbole"]
@@ -287,12 +302,18 @@ def appliquer(portefeuille, changement):
         raise ValueError(f"Type de changement inconnu : {genre}")
 
     libere = nouveau[symbole] - garde
-    autres = total - nouveau[symbole]
-    if autres <= 0:
-        raise ValueError("Impossible de répartir : le portefeuille n'a qu'une ligne.")
-    for s in nouveau:
-        if s != symbole:
-            nouveau[s] += libere * nouveau[s] / autres  # répartition au prorata
+    vers = changement.get("vers")
+    if vers:
+        if vers == symbole:
+            raise ValueError("Le titre réduit et le titre qui reçoit le montant doivent différer.")
+        nouveau[vers] = nouveau.get(vers, 0) + libere
+    else:
+        autres = total - nouveau[symbole]
+        if autres <= 0:
+            raise ValueError("Impossible de répartir : le portefeuille n'a qu'une ligne.")
+        for s in nouveau:
+            if s != symbole:
+                nouveau[s] += libere * nouveau[s] / autres  # répartition au prorata
     if garde > 0:
         nouveau[symbole] = garde
     else:
@@ -300,22 +321,55 @@ def appliquer(portefeuille, changement):
     return nouveau
 
 
-def _phrase(changement, portefeuille, avant, apres):
+def _decrire(changement, portefeuille):
+    """Une proposition en « si ... », décrite sur le portefeuille d'avant ce changement."""
     total = sum(portefeuille.values())
     s = changement["symbole"]
-    fin = f"le score passerait de {avant['score']} à {apres['score']}."
-    if changement["type"] == "plafonner":
-        return (f"Scénario fictif : si {s} passait de {pct(portefeuille[s] / total)} à "
-                f"{pct(changement['poids_max'])} du portefeuille, {fin}")
+    vers = changement.get("vers")
     if changement["type"] == "ajouter":
-        return f"Scénario fictif : si {dollars(changement['montant'])} de {s} étaient ajoutés au portefeuille, {fin}"
-    return f"Scénario fictif : si {s} sortait du portefeuille, {fin}"
+        return f"{dollars(changement['montant'])} de {s} étaient ajoutés au portefeuille"
+    if changement["type"] == "plafonner":
+        texte = f"{s} passait de {pct(portefeuille[s] / total)} à {pct(changement['poids_max'])} du portefeuille"
+        return texte + (f", la différence allant dans {vers}" if vers else "")
+    texte = f"{s} ({pct(portefeuille[s] / total)}) sortait du portefeuille"
+    return texte + (f", le montant allant dans {vers}" if vers else "")
+
+
+def _decrire_reallocation(portefeuille, apres):
+    """« NVDA passait de 38,5 % à 0 %, SPY de 0 % à 40 % » : baisses d'abord, puis hausses."""
+    t0, t1 = sum(portefeuille.values()), sum(apres.values())
+    lignes = []
+    for s in list(portefeuille) + [s for s in apres if s not in portefeuille]:
+        w0, w1 = portefeuille.get(s, 0) / t0, apres.get(s, 0) / t1
+        if abs(w1 - w0) >= 0.005:
+            lignes.append((w1 > w0, s, w0, w1))
+    lignes.sort(key=lambda l: l[0])
+    morceaux = [f"{s} passait de {pct(w0)} à {pct(w1)}" if i == 0 else f"{s} de {pct(w0)} à {pct(w1)}"
+                for i, (_, s, w0, w1) in enumerate(lignes)]
+    if len(morceaux) > 1:
+        return ", ".join(morceaux[:-1]) + " et " + morceaux[-1]
+    return morceaux[0] if morceaux else "rien ne changeait"
+
+
+def _phrase(changement, portefeuille, avant, apres):
+    fin = f"le score passerait de {avant['score']} à {apres['score']}."
+    if changement["type"] == "reallouer":
+        texte = _decrire_reallocation(portefeuille, appliquer(portefeuille, changement))
+        return f"Scénario fictif, total du portefeuille inchangé : si {texte}, {fin}"
+    if changement["type"] != "combiner":
+        return f"Scénario fictif : si {_decrire(changement, portefeuille)}, {fin}"
+    morceaux, courant = [], dict(portefeuille)
+    for i, etape in enumerate(changement["etapes"], start=1):
+        morceaux.append(f"({i}) {_decrire(etape, courant)}")
+        courant = appliquer(courant, etape)
+    return (f"Scénario fictif en {len(morceaux)} étape(s) : si " + " ; puis ".join(morceaux) + f", {fin}")
 
 
 def simuler(portefeuille, changement, profil, analyser):
     mesures_avant = analyser(portefeuille)
     avant = evaluer(mesures_avant, profil)
-    mesures_apres = analyser(appliquer(portefeuille, changement))
+    portefeuille_apres = appliquer(portefeuille, changement)
+    mesures_apres = analyser(portefeuille_apres)
     apres = evaluer(mesures_apres, profil)
 
     ameliore, degrade = [], []
@@ -336,11 +390,21 @@ def simuler(portefeuille, changement, profil, analyser):
             degrade.append(f"poids du secteur d'intérêt {s} : {pct(w0)} → {pct(w1)}")
 
     hypotheses = list(apres["hypotheses"])
-    if changement["type"] in ("plafonner", "retirer"):
+    etapes = changement.get("etapes", [changement])
+    if any(e["type"] in ("plafonner", "retirer") and not e.get("vers") for e in etapes):
         hypotheses.append("Le montant libéré est réparti sur les autres lignes au prorata de leur poids.")
-    else:
+    if any(e.get("vers") for e in etapes):
+        hypotheses.append("Le montant libéré va entièrement dans le titre indiqué ; le total du portefeuille ne change pas.")
+    if any(e["type"] == "ajouter" for e in etapes):
         hypotheses.append("Le montant ajouté est de l'argent nouveau : le total du portefeuille augmente.")
+    if changement["type"] == "reallouer":
+        hypotheses.append("Réallocation : les montants sont déplacés entre les titres, sans argent nouveau ; "
+                          "frais de transaction et impôts ignorés.")
+    if len(etapes) > 1 or changement.get("etapes_recherche"):
+        hypotheses.append("Les étapes sont trouvées une à une, en gardant chaque fois celle qui rapproche le plus "
+                          "le portefeuille des cibles du profil ; d'autres combinaisons existent.")
 
+    total_apres = sum(portefeuille_apres.values())
     return {
         "changement": changement,
         "avant": avant,
@@ -349,65 +413,147 @@ def simuler(portefeuille, changement, profil, analyser):
         "degrade": degrade,  # obligatoire, même vide : on montre le compromis
         "phrase": _phrase(changement, portefeuille, avant, apres),
         "hypotheses": hypotheses,
+        # poids de chaque titre avant et après, pour le tableau de l'interface
+        "poids_avant": {s: m / sum(portefeuille.values()) for s, m in portefeuille.items()},
+        "poids_apres": {s: m / total_apres for s, m in portefeuille_apres.items()},
     }
 
 
-def _candidats(portefeuille, mesures, profil):
+# Titres qui peuvent recevoir un montant libéré : FNB larges et or, jamais un titre
+# isolé ni la crypto (on ne veut pas remplacer une concentration par une autre).
+DESTINATIONS = ["XBB.TO", "ZST.TO", "AGG", "XIU.TO", "SPY", "ESGV", "GLD"]
+MAX_ETAPES = 6
+ETAPES_LEGER = 2
+SCORE_SUFFISANT = 90  # on arrête d'ajouter des étapes une fois ce score atteint
+
+
+def _contraintes(resultat):
+    return {al["code"] for al in resultat["alertes"] if al["gravite"] == "contrainte"}
+
+
+def _poids_contraint(mesures, profil):
+    """Part du portefeuille qui viole une contrainte (crypto refusée, secteur exclu)."""
+    poids = 0.0
+    if profil.get("crypto", "oui") == "non":
+        poids += mesures.get("poids_par_classe", {}).get("crypto", 0)
+    for s in profil.get("exclure_secteurs") or []:
+        poids += mesures.get("poids_par_secteur", {}).get(s, 0)
+    return poids
+
+
+def _ecart(evaluation):
+    """Distance continue aux cibles. Le score sature à 0 loin des cibles : cet écart
+    départage alors les étapes qui rapprochent quand même le portefeuille."""
+    total = 0.0
+    for n in evaluation["notes"]:
+        v, c = n["valeur"], n["cible"]
+        if n["nom"] == "niveau_de_risque":
+            total += max(0.0, v - c[1]) / c[1]
+        elif n["nom"] == "risque_de_perte":
+            total += max(0.0, v - c) / c
+        else:
+            total += max(0.0, c - v) / c
+    return total
+
+
+def _candidats(portefeuille, destinations):
+    """Tous les changements d'une étape : réduire de moitié ou retirer chaque ligne,
+    le montant libéré allant au prorata ou dans une destination."""
     total = sum(portefeuille.values())
     liste = []
-
-    # 1. réduire de moitié les trois plus gros contributeurs au risque, hors FNB larges
-    hors_fnb = {s: c for s, c in mesures["contributions"].items()
-                if s not in FNB_LARGES and s in portefeuille}
-    for s in sorted(hors_fnb, key=hors_fnb.get, reverse=True)[:3]:
-        liste.append({"type": "plafonner", "symbole": s,
-                      "poids_max": round(portefeuille[s] / total / 2, 4)})
-
-    # 2. ajouter un FNB large pour chaque classe absente ou sous les 10 %
-    classes = mesures.get("poids_par_classe", {})
-    for classe, fnb in FNB_PAR_CLASSE.items():
-        if classes.get(classe, 0) < 0.10:
-            liste.append({"type": "ajouter", "symbole": fnb, "montant": round(0.10 * total)})
-
-    # 3. retirer les lignes qui violent une contrainte
-    classe_de = mesures.get("classe_par_titre", {})
-    secteur_de = mesures.get("secteur_par_titre", {})
-    exclus = set(profil.get("exclure_secteurs") or [])
-    for s in portefeuille:
-        crypto_refusee = profil.get("crypto", "oui") == "non" and classe_de.get(s) == "crypto"
-        if (crypto_refusee or secteur_de.get(s) in exclus) and len(portefeuille) > 1:
-            liste.append({"type": "retirer", "symbole": s})
+    for s, montant in portefeuille.items():
+        w = montant / total
+        for vers in [None] + [d for d in destinations if d != s]:
+            if vers is None and len(portefeuille) == 1:
+                continue
+            base = {"symbole": s, **({"vers": vers} if vers else {})}
+            if w > 0.04:
+                liste.append({"type": "plafonner", "poids_max": round(w / 2, 4), **base})
+            liste.append({"type": "retirer", **base})
     return liste
 
 
-def proposer_scenarios(portefeuille, profil, analyser, maximum=3):
-    mesures = analyser(portefeuille)
-    retenus = []
-    for changement in _candidats(portefeuille, mesures, profil):
-        resultat = simuler(portefeuille, changement, profil, analyser)
-        avant, apres = resultat["avant"], resultat["apres"]
+def _admissible(mesures_avant, mesures_apres, eval_avant, eval_apres, profil):
+    """Refuse un changement qui crée une contrainte violée ou vide un secteur d'intérêt."""
+    if _contraintes(eval_apres) - _contraintes(eval_avant):
+        return False
+    secteurs_avant = mesures_avant.get("poids_par_secteur", {})
+    secteurs_apres = mesures_apres.get("poids_par_secteur", {})
+    return not any(secteurs_avant.get(s, 0) > EPS and secteurs_apres.get(s, 0) < EPS
+                   for s in profil.get("secteurs_interet") or [])
 
-        contraintes_avant = {al["code"] for al in avant["alertes"] if al["gravite"] == "contrainte"}
-        contraintes_apres = {al["code"] for al in apres["alertes"] if al["gravite"] == "contrainte"}
-        if contraintes_apres - contraintes_avant:
-            continue  # crée une nouvelle contrainte violée
 
-        secteurs_apres = analyser(appliquer(portefeuille, changement)).get("poids_par_secteur", {})
-        if any(mesures.get("poids_par_secteur", {}).get(s, 0) > EPS and secteurs_apres.get(s, 0) < EPS
-               for s in profil.get("secteurs_interet") or []):
-            continue  # ramène à zéro un secteur d'intérêt
-
-        levees = len(contraintes_avant - contraintes_apres)
-        if apres["score"] > avant["score"] or levees > 0:
-            retenus.append((levees, apres["score"], resultat))
-
-    retenus.sort(key=lambda t: (t[0], t[1]), reverse=True)
-    scenarios, symboles = [], set()
-    for _, _, resultat in retenus:
-        s = resultat["changement"]["symbole"]
-        if s not in symboles:
-            scenarios.append(resultat)
-            symboles.add(s)
-        if len(scenarios) == maximum:
+def _chemin(portefeuille, profil, analyser, max_etapes, destinations=DESTINATIONS):
+    """Recherche gloutonne. À chaque étape, on garde le changement qui réduit le plus la part
+    en contrainte, puis qui monte le plus le score, puis qui réduit le plus l'écart aux cibles.
+    Les étapes qui retirent une contrainte ne comptent pas dans max_etapes."""
+    courant = dict(portefeuille)
+    mesures = analyser(courant)
+    evaluation = evaluer(mesures, profil)
+    etapes, comptees = [], 0
+    while len(etapes) < max_etapes + 4:
+        contraint = _poids_contraint(mesures, profil)
+        if not contraint and (comptees >= max_etapes or evaluation["score"] >= SCORE_SUFFISANT):
             break
-    return scenarios
+        meilleur = None
+        for c in _candidats(courant, destinations):
+            essai = appliquer(courant, c)
+            m = analyser(essai)
+            e = evaluer(m, profil)
+            if not _admissible(mesures, m, evaluation, e, profil):
+                continue
+            cle = (-round(_poids_contraint(m, profil), 4), e["score"], -_ecart(e))
+            if meilleur is None or cle > meilleur[0]:
+                meilleur = (cle, c, essai, m, e)
+        if meilleur is None:
+            break
+        _, c, essai, m, e = meilleur
+        retire_contrainte = _poids_contraint(m, profil) < contraint - EPS
+        utile = e["score"] >= evaluation["score"] + 2 or _ecart(e) < 0.9 * _ecart(evaluation)
+        if not (retire_contrainte or utile):
+            break
+        etapes.append(c)
+        comptees += 0 if retire_contrainte else 1
+        courant, mesures, evaluation = essai, m, e
+    return etapes
+
+
+def _scenario(portefeuille, etapes, profil, analyser):
+    """Un seul changement : décrit tel quel. Plusieurs : résumés par la réallocation finale,
+    plus lisible que la suite d'étapes de la recherche (qui peut toucher un titre deux fois)."""
+    if len(etapes) == 1:
+        changement = etapes[0]
+    else:
+        final = appliquer(portefeuille, {"type": "combiner", "etapes": etapes})
+        total = sum(final.values())
+        changement = {"type": "reallouer", "etapes_recherche": len(etapes),
+                      "poids_cibles": {s: round(m / total, 4) for s, m in final.items() if m / total >= 0.0005}}
+    resultat = simuler(portefeuille, changement, profil, analyser)
+    levees = _contraintes(resultat["avant"]) - _contraintes(resultat["apres"])
+    return resultat if resultat["apres"]["score"] > resultat["avant"]["score"] or levees else None
+
+
+def proposer_scenarios(portefeuille, profil, analyser, maximum=3):
+    """Jusqu'à trois scénarios contrastés :
+      1. le plus complet (jusqu'à six étapes de recherche, toutes destinations) ;
+      2. une variante qui n'utilise pas les destinations du premier ;
+      3. une version légère (deux étapes, hors retrait des contraintes)."""
+    essais = []
+    premier = _chemin(portefeuille, profil, analyser, MAX_ETAPES)
+    essais.append(premier)
+    utilisees = {e.get("vers") for e in premier}
+    autres = [d for d in DESTINATIONS if d not in utilisees]
+    if autres:
+        essais.append(_chemin(portefeuille, profil, analyser, MAX_ETAPES, autres))
+    essais.append(_chemin(portefeuille, profil, analyser, ETAPES_LEGER))
+
+    scenarios, vus = [], []
+    for etapes in essais:
+        if not etapes or etapes in vus:
+            continue
+        vus.append(etapes)
+        resultat = _scenario(portefeuille, etapes, profil, analyser)
+        if resultat:
+            scenarios.append(resultat)
+    scenarios.sort(key=lambda r: r["apres"]["score"], reverse=True)
+    return scenarios[:maximum]

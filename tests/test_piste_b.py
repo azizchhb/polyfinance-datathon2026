@@ -99,8 +99,12 @@ def test_simuler_et_scenarios():
     assert isinstance(res["degrade"], list)
     assert res["phrase"].startswith("Scénario fictif")
     scenarios = proposer_scenarios(portefeuille, MATEO, fausse_analyser)
-    assert scenarios and scenarios[0]["changement"] == {"type": "retirer", "symbole": "BTC-USD"}
-    assert len({s["changement"]["symbole"] for s in scenarios}) == len(scenarios)
+    assert scenarios
+    for s in scenarios:  # chaque scénario sort la crypto que Mateo refuse
+        assert "BTC-USD" not in s["poids_apres"]
+        assert "alerte levée : CRYPTO_REFUSEE" in s["ameliore"]
+        assert abs(sum(s["poids_apres"].values()) - 1) < 1e-9
+    assert len({str(s["changement"]) for s in scenarios}) == len(scenarios)  # tous différents
 
 
 if __name__ == "__main__":
