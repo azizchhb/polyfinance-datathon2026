@@ -25,7 +25,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 import donnees
-from piste_b import dollars, evaluer, pct, proposer_scenarios, simuler
+from piste_b import cible, dollars, evaluer, niveau_effectif, pct, proposer_scenarios, rendement_requis, simuler
 
 from piste_a import analyser  # mesures sur les vraies données (S3, copie locale du dépôt en secours)
 
@@ -134,6 +134,9 @@ Trois types de demandes :
 - Scénario (« je veux ajouter 15 000 $ de X ») : reformule d'abord ce que tu as compris (type de
   changement, titre, montant), appelle simuler, puis présente avant et après.
 - Explication (« d'où vient ce chiffre ? ») : appelle evaluer et explique la mesure, sa cible et son hypothèse.
+- Objectif chiffré (« je veux 75 000 $ dans 10 ans ») : appelle evaluer avec montant_vise, et cotisation_mensuelle
+  si elle est donnée. L'outil renvoie le rendement annuel requis et le seuil retenu pour le profil : présente-les
+  comme une exigence arithmétique, jamais comme une prévision ni une promesse.
 
 Si une demande est incohérente avec le profil (par exemple un titre très risqué pour un profil prudent),
 tu ne refuses pas et tu n'approuves pas : tu appelles simuler, tu montres avec les chiffres quelles cibles
@@ -174,8 +177,16 @@ OUTILS = [
         "description": "Compare les mesures du portefeuille aux cibles du profil : score de 0 à 100, "
                        "verdict, trois notes (niveau_de_risque, risque_de_perte, diversification) avec "
                        "valeur, cible et explication, alertes (contrainte ou avertissement) et hypothèses. "
-                       "Aucun paramètre.",
-        "inputSchema": SANS_PARAMETRE}},
+                       "Paramètres facultatifs, seulement si la personne exprime un objectif chiffré : "
+                       "montant_vise et cotisation_mensuelle ; le résultat contient alors « objectif » avec "
+                       "le rendement annuel requis et le seuil du profil.",
+        "inputSchema": {"json": {
+            "type": "object",
+            "properties": {
+                "montant_vise": {"type": "number", "description": "Montant en dollars canadiens que la personne "
+                                                                  "veut atteindre à la fin de son horizon"},
+                "cotisation_mensuelle": {"type": "number", "description": "Cotisation mensuelle en dollars "
+                                                                          "canadiens, si elle est donnée"}}}}}},
     {"toolSpec": {
         "name": "simuler",
         "description": "Calcule un scénario fictif et compare avant et après : score, notes, alertes levées "
@@ -293,12 +304,35 @@ def executer_localement(nom, portefeuille, profil, changement=None):
     return proposer_scenarios(portefeuille, profil, analyser)
 
 
+def objectif_demande(args):
+    """Objectif chiffré passé par le modèle à evaluer (montant visé, cotisation), ou None."""
+    montant = args.get("montant_vise")
+    if not montant or float(montant) <= 0:
+        return None
+    return {"montant_vise": float(montant), "cotisation_mensuelle": float(args.get("cotisation_mensuelle") or 0)}
+
+
+def completer_objectif(resultat, objectif, portefeuille, profil):
+    """Ajoute au résultat d'evaluer le rendement annuel qu'exigerait l'objectif (calcul de piste_b)."""
+    capital = float(sum(portefeuille.values()))
+    requis = rendement_requis(capital, 12 * objectif["cotisation_mensuelle"], profil["horizon_annees"],
+                              objectif["montant_vise"])
+    resultat["objectif"] = {**objectif, "horizon_annees": profil["horizon_annees"], "capital_actuel": capital,
+                            "rendement_annuel_requis": round(requis, 4),
+                            "seuil_rendement_profil": cible("rendement_max", niveau_effectif(profil))}
+    return resultat
+
+
 def resume_outil(nom, r, portefeuille, changement=None):
     """Une ligne pour le volet « Ce que l'agent a fait »."""
     if nom == "analyser":
         return f"{len(portefeuille)} titres analysés, capital de {dollars(r['capital'])}"
     if nom == "evaluer":
-        return f"score de {r['score']} sur 100, verdict {r['verdict']}, {len(r['alertes'])} alerte(s)"
+        texte = f"score de {r['score']} sur 100, verdict {r['verdict']}, {len(r['alertes'])} alerte(s)"
+        if r.get("objectif"):
+            o = r["objectif"]
+            texte += f", objectif {dollars(o['montant_vise'])} : {pct(o['rendement_annuel_requis'])} par an requis"
+        return texte
     if nom == "simuler":
         return f"{resume_changement(changement)} : score de {r['avant']['score']} à {r['apres']['score']}"
     return f"{len(r)} scénario(s) retenu(s)"
@@ -310,16 +344,20 @@ def executer_outil(nom, args, portefeuille, profil):
     if nom not in ("analyser", "evaluer", "simuler", "proposer_scenarios"):
         raise ValueError(f"outil inconnu : {nom}")
     changement = valider_changement(args, portefeuille, univers_couvert()) if nom == "simuler" else None
+    objectif = objectif_demande(args) if nom == "evaluer" else None
+    profil_outil = {**profil, **objectif} if objectif else profil  # piste_b lit montant_vise et cotisation
 
     resultat, lieu = None, "local"
     if MODE_OUTILS != "0" and _lambda_indisponible is None:
         try:
-            resultat, lieu = executer_sur_lambda(nom, portefeuille, profil, changement), "AWS Lambda"
+            resultat, lieu = executer_sur_lambda(nom, portefeuille, profil_outil, changement), "AWS Lambda"
         except (ClientError, BotoCoreError, RuntimeError) as e:  # infrastructure : on retombe en local
             _lambda_indisponible = f"{type(e).__name__}: {e}"
             journal.warning("Lambda indisponible, calcul local : %s", _lambda_indisponible)
     if resultat is None:
-        resultat = executer_localement(nom, portefeuille, profil, changement)
+        resultat = executer_localement(nom, portefeuille, profil_outil, changement)
+    if objectif:
+        resultat = completer_objectif(resultat, objectif, portefeuille, profil)
     resume = resume_outil(nom, resultat, portefeuille, changement)
     if lieu == "AWS Lambda":
         resume += " · calculé sur AWS Lambda"

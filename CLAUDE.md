@@ -228,7 +228,9 @@ Un fichier `piste_c.py` qui expose `demander`. À l'intérieur :
    qu'il ne puisse pas se tromper sur un montant.
 3. **Trois types de demandes** à reconnaître : diagnostic (« suis-je trop concentrée ? »),
    scénario (« je veux ajouter 15 000 $ de X »), question d'explication (« d'où vient ce chiffre ? »).
-   Pour un scénario, l'agent reformule ce qu'il a compris avant de conclure.
+   Pour un scénario, l'agent reformule ce qu'il a compris avant de conclure. Ajout du 15 novembre : l'objectif
+   chiffré (« je veux 75 000 $ dans 10 ans ») passe par `evaluer` avec `montant_vise` et `cotisation_mensuelle` ;
+   le résultat contient `objectif` (rendement annuel requis, calculé par `piste_b.rendement_requis`, et seuil du profil).
 4. **Le test de Robert.** Sur une demande d'ajout d'un titre risqué, l'agent appelle `simuler`,
    constate le dépassement, signale l'incohérence avec le profil et montre les chiffres.
    Il ne refuse pas et il n'approuve pas : il met la demande en contexte.

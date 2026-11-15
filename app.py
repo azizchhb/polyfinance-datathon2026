@@ -95,6 +95,11 @@ def formulaire(persona):
     }
 
 
+def md(texte):
+    """Texte sûr pour le Markdown de Streamlit : un « $ » non échappé ouvre une formule mathématique."""
+    return str(texte).replace("$", "\\$")
+
+
 def mode_theme():
     """« sombre » ou « clair » selon le thème actif de Streamlit (clair si l'information manque)."""
     try:
@@ -209,9 +214,9 @@ with onglet_diagnostic:
         st.success("Aucune alerte pour ce profil.")
     for alerte in resultat["alertes"]:
         if alerte["gravite"] == "contrainte":
-            st.error(alerte["message"])
+            st.error(md(alerte["message"]))
         else:
-            st.warning(alerte["message"])
+            st.warning(md(alerte["message"]))
 
     st.subheader("Un portefeuille, trois verdicts")
     lignes = []
@@ -235,7 +240,7 @@ with onglet_scenarios:
             avant, apres = scenario["avant"]["score"], scenario["apres"]["score"]
             with colonne:
                 st.subheader(f"Scénario {numero}")
-                st.write(scenario["phrase"])
+                st.write(md(scenario["phrase"]))
                 st.metric("Score", f"{apres} / 100", delta=apres - avant)
                 st.markdown("**Ce qui s'améliore**")
                 for ligne in scenario["ameliore"] or ["Rien"]:
@@ -254,13 +259,13 @@ with onglet_discussion:
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.write(message["texte"])
+            st.write(md(message["texte"]))
             if message.get("outils"):
                 with st.expander("Ce que l'agent a fait"):
                     for appel in message["outils"]:
-                        st.write(f"- {appel['outil']} : {appel['resume']}")
+                        st.write(md(f"- {appel['outil']} : {appel['resume']}"))
                     for limite in message.get("limites", []):
-                        st.caption(limite)
+                        st.caption(md(limite))
 
     question = st.chat_input("Pose une question sur ce portefeuille")
     if question:
