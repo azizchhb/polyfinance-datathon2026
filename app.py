@@ -69,7 +69,7 @@ QUESTIONS = {
     "Robert": ["J'ai lu plein d'articles sur NVIDIA. Je veux y mettre 15 000 $.",
                "Ce portefeuille me convient-il ?",
                "D'où vient le chiffre de perte maximale ?"],
-    "Mon profil": ["Ce portefeuille me convient-il ?",
+    "Personnalisé": ["Ce portefeuille me convient-il ?",
                    "Quels changements rapprocheraient ce portefeuille de mon profil ?",
                    "D'où vient le chiffre de perte maximale ?"],
 }
@@ -373,7 +373,6 @@ def graphique_diversification(mesures):
 etat = st.session_state
 etat.setdefault("etape", "questionnaire")
 etat.setdefault("persona", "Amira")
-etat.setdefault("persona_affiche", "Mon profil")
 etat.setdefault("messages", [])
 if etat.etape == "resultats" and not (etat.get("profil") and etat.get("portefeuille")):
     etat.etape = "questionnaire"
@@ -485,28 +484,25 @@ def questionnaire():
     if st.button("Analyser mon portefeuille", type="primary", width="stretch",
                  disabled=not portefeuille or bool(non_couverts)):
         etat.profil, etat.portefeuille, etat.persona_du_profil = profil, portefeuille, persona
-        etat.etape, etat.messages, etat.persona_affiche, etat.persona_chat = "resultats", [], "Mon profil", None
+        etat.etape, etat.messages = "resultats", []
         st.rerun()
 
 
 # --------------------------------------------------------------- 2. résultats
 def resultats():
-    portefeuille, profil_saisi = etat.portefeuille, etat.profil
+    # Un seul profil sur cette page : celui du questionnaire. Pour en essayer un autre, on revient
+    # au questionnaire, qui garde les réponses déjà données.
+    portefeuille, profil = etat.portefeuille, etat.profil
+    depart = etat.get("persona_du_profil", "Personnalisé")
 
     gauche, droite = st.columns([4, 1], vertical_alignment="bottom")
     gauche.title("Diversifié pour qui ?")
     gauche.caption(AVERTISSEMENT)
     if droite.button("Modifier mes réponses", width="stretch"):
-        etat.etape = "questionnaire"
+        # Streamlit oublie la valeur d'un widget absent de la page : on remet le point de départ
+        # à la main, sinon le questionnaire reviendrait sur Amira et perdrait les réponses.
+        etat.etape, etat.persona = "questionnaire", depart
         st.rerun()
-
-    with st.container(border=True):  # la barre de choix se lit comme un réglage, pas comme du texte
-        choix = st.radio("Regarder ce portefeuille avec le profil de", ["Mon profil"] + list(PERSONAS),
-                         horizontal=True, key="persona_affiche",
-                         captions=["Vos réponses au questionnaire"] + [PORTRAITS[p] for p in PERSONAS])
-    profil = profil_saisi if choix == "Mon profil" else dict(PERSONAS[choix])
-    if etat.get("persona_chat") != choix:  # on change de personne : la discussion repart à zéro
-        etat.messages, etat.persona_chat = [], choix
 
     try:
         mesures = analyser(portefeuille)
@@ -641,7 +637,7 @@ def resultats():
                "résultats. Il ne calcule rien lui-même et ne donne aucun conseil. Sous chaque réponse : ce qu'il "
                "a fait, les contrôles passés et les limites.")
     question = None
-    for colonne, suggestion in zip(st.columns(len(QUESTIONS[choix])), QUESTIONS[choix]):
+    for colonne, suggestion in zip(st.columns(len(QUESTIONS[depart])), QUESTIONS[depart]):
         if colonne.button(suggestion, key=f"suggestion_{suggestion}", width="stretch"):
             question = suggestion
 
