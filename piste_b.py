@@ -286,12 +286,24 @@ def evaluer(mesures, profil):
             e4 += f" Titre le plus touché : {pire} ({pct(par_titre[pire])} de baisse)."
         notes.append({"nom": "resistance_crise", "valeur": crise, "cible": limite_crise, "note": n4,
                       "poids": w4, "explication": e4})
+    liste_alertes = alertes(mesures, profil, n)
+    # Une contrainte violée (secteur exclu, crypto refusée) n'est pas un compromis de risque :
+    # la personne a dit non. Le score ne la voit pas ; le verdict, lui, ne peut pas dire « adéquat ».
+    v, raison = verdict(score), None
+    violees = [al for al in liste_alertes if al["gravite"] == "contrainte"]
+    if violees and v == "adequat":
+        v = "a_surveiller"
+        raison = ("Verdict plafonné à « à surveiller » malgré le score : le portefeuille ne respecte pas "
+                  f"{'une contrainte' if len(violees) == 1 else 'des contraintes'} du profil (voir les alertes).")
+        hypotheses.append("Une contrainte du profil non respectée plafonne le verdict à « à surveiller », "
+                          "quel que soit le score (choix de l'équipe).")
     return {
         "score": score,
-        "verdict": verdict(score),
+        "verdict": v,
+        "raison_verdict": raison,  # None sauf si une contrainte a plafonné le verdict
         "niveau_effectif": n,
         "notes": notes,
-        "alertes": alertes(mesures, profil, n),
+        "alertes": liste_alertes,
         "hypotheses": hypotheses,
     }
 

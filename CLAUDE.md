@@ -168,6 +168,8 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   permet de les afficher avant d'appeler `analyser`.
 - `evaluer(mesures, profil)` -> `score` (0 à 100), `verdict`, `niveau_effectif`, `notes` (trois notes
   avec valeur, cible, note, poids, explication), `alertes` (code, gravite, message), `hypotheses`.
+  Depuis le 15 novembre : une alerte de gravité `contrainte` (secteur exclu, crypto refusée) plafonne le
+  verdict à `a_surveiller` même si le score dépasse 80 ; `raison_verdict` le dit (sinon `None`).
 - `simuler(portefeuille, changement, profil, analyser)` -> `avant`, `apres`, `ameliore`, `degrade`,
   `phrase`, `hypotheses`, et depuis le 15 novembre `poids_avant` et `poids_apres` (symbole -> poids).
   Types de changement : `plafonner`, `ajouter`, `retirer` (`plafonner` et `retirer` acceptent `vers`, le titre

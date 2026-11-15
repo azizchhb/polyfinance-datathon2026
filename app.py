@@ -520,6 +520,8 @@ def resultats():
         colonne_score.metric("Score d'adéquation", f"{resultat['score']} / 100")
         with colonne_verdict:
             bandeau_verdict(resultat["verdict"])
+            if resultat.get("raison_verdict"):
+                st.write(md(resultat["raison_verdict"]))
             st.caption(f"Niveau de risque retenu : {nombre(resultat['niveau_effectif'])} sur 3, "
                        f"objectif {etiquette(OBJECTIFS, profil['objectif']).lower()}, "
                        f"capital de {dollars(mesures['capital'])}.")
