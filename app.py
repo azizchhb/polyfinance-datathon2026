@@ -620,6 +620,12 @@ def afficher_periode_scenario(portefeuille, scenario):
         f"({signe(apres['variation'])}, soit {signe(apres['variation_annuelle'])} par an). Écart en fin de "
         f"période : **{('+' if ecart >= 0 else '−') + dollars(abs(ecart))}** pour le scénario."))
     st.altair_chart(graphique_crise_comparee(actuel, apres, None, periode=True), width="stretch")
+    if ecart < 0:
+        st.info("**Pourquoi le scénario fait moins bien ici ?** Les scénarios cherchent à réduire le risque pour "
+                "rapprocher le portefeuille de votre profil, jamais à gagner plus. Or de 2021 à 2026, les titres les "
+                "plus agités ont souvent le plus monté : en déplacer une partie vers des titres plus stables coûte du "
+                "rendement en regardant en arrière. C'est la contrepartie de la réduction du risque, qui se voit "
+                "surtout dans les baisses : comparez avec l'onglet « Et pendant la crise de 2022 ? ».")
     st.warning("Rendement passé, sur une seule période de cinq ans : ce n'est pas une prévision, et une autre "
                "période donnerait un autre résultat. Les 31 titres ont été choisis en 2026 parmi ceux qui sont "
                "devenus gros (biais du survivant) : les portefeuilles concentrés sur ces titres en profitent ici. "
