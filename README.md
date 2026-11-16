@@ -10,6 +10,8 @@ aucune donnée bancaire réelle, aucun conseil financier personnalisé.
 **Application en ligne : https://dw5l2fp67oxxw.cloudfront.net** (Amazon CloudFront en HTTPS devant
 Amazon EC2, dans le compte AWS de l'événement, active jusqu'à la fermeture de ce compte).
 
+Lien de secours : **https://sigmabeta.streamlit.app** (Streamlit Community Cloud, sans accès à AWS : le diagnostic, les graphiques et les scénarios fonctionnent avec la copie des données du dépôt ; la discussion avec l'agent, qui a besoin de Bedrock, n'y répond pas).
+
 ## Ce que fait l'application
 
 1. **Questionnaire.** Point de départ (Amira, Mateo, Robert ou réponses personnalisées), tolérance
