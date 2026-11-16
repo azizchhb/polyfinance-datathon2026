@@ -3,7 +3,7 @@
 # Versions testées le 15 novembre 2026 avec Python 3.14 : streamlit 1.67.0, pandas 3.0.3,
 # numpy 2.5.1, altair 6.3.0, boto3 1.44.3. La fonction Lambda tourne en Python 3.12 avec la
 # couche AWS « AWSSDKPandas » (pandas et numpy fournis par AWS) : voir aws/deployer_lambda.py.
-streamlit>=1.50
+streamlit>=1.67  # width="stretch" sur les graphiques : versions récentes seulement (Python 3.10 ou plus)
 pandas>=2.2
 numpy>=1.26
 altair>=5.4
