@@ -82,6 +82,9 @@ le dépôt public : après un `git push`, `--mettre-a-jour` suffit.
 
 ## Architecture et rôle de chaque service AWS
 
+Document complet, avec le schéma, la justification de chaque service et l'alternative écartée, la sécurité,
+les coûts et l'évolutivité : **[docs/architecture_aws.md](docs/architecture_aws.md)**.
+
 ```
 App Streamlit  <->  Agent sur Bedrock  <->  Outils sur Lambda (pistes A et B)  <-  S3 (données)
                            |                            |
