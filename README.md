@@ -43,6 +43,7 @@ pip install -r requirements.txt          # sur Mac : python3 -m pip install -r r
 python -m streamlit run app.py           # l'interface (python3 sur Mac)
 python piste_a.py                        # vérifications des calculs et portefeuilles de référence
 python tests/test_piste_b.py             # les 10 tests du score et des scénarios
+python tests/test_agent.py               # 12 questions types posées à l'agent réel (Bedrock), environ 3 minutes
 python piste_c.py                        # démonstration de l'agent sur le persona Robert
 ```
 
@@ -220,6 +221,13 @@ Profil : tolérance 1,5, horizon 4 ans (capacité 2), objectif préservation, cr
    réglages du score, d'où des scores légèrement différents.
 
 ## Validations
+
+**Agent** (`tests/test_agent.py`, résultats dans [`docs/validation_agent.md`](docs/validation_agent.md)) :
+12 questions types sur le vrai modèle et la vraie Lambda (diagnostic, ESG, explication, scénarios simple et
+combiné, piège de Robert, objectif chiffré, change, demande d'achat, demande de conseil, hors sujet, symbole
+non couvert). Dernier passage : **12/12 réussis, 290 nombres cités tous retrouvés dans les résultats des
+outils, aucun mot de conseil, 1 régénération par la gouvernance, 12,8 s par réponse en moyenne.** Le modèle ne
+répond pas mot pour mot pareil d'un passage à l'autre : un passage montre le comportement, il ne le garantit pas.
 
 - **Calculs** (`python piste_a.py`) : la somme des contributions au risque vaut 1 ; un portefeuille
   d'un seul titre a la volatilité de ce titre ; la sortie a exactement les clés du contrat, en

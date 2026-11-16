@@ -67,7 +67,7 @@ QUESTIONS = {
               "Et si je plafonnais NVDA à 10 % du portefeuille ?",
               "D'où vient le chiffre de perte maximale ?"],
     "Mateo": ["Mon portefeuille respecte-t-il mes exclusions ESG ?",
-              "Je veux avoir 150 000 $ dans 10 ans, qu'est-ce que ça exige ?",
+              "Je veux avoir 250 000 $ dans 10 ans, qu'est-ce que ça exige ?",
               "Quels changements rapprocheraient ce portefeuille de mon profil ?"],
     "Robert": ["J'ai lu plein d'articles sur NVIDIA. Je veux y mettre 60 000 $.",
                "Ce portefeuille me convient-il ?",

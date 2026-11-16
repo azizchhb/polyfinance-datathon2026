@@ -348,7 +348,7 @@ Dossiers :
   (démo, équilibré 60/40, techno concentré, canadien avec énergie, un cas de symbole non couvert, et les
   portefeuilles d'Amira, Mateo et Robert imaginés par la piste B).
 - `docs/` : `documentation_piste_c.md` (architecture et traces pour la piste D), `guide_piste_a/` (maquette HTML du guide de la piste A).
-- `tests/` : `test_piste_b.py` (les 7 tests du guide de la piste B) et `faux.py`, fausse piste A aux chiffres
+- `tests/` : `test_agent.py` (12 questions types posées à l'agent réel, résultats dans `docs/validation_agent.md`), `test_piste_b.py` (les 7 tests du guide de la piste B) et `faux.py`, fausse piste A aux chiffres
   inventés pour tester l'interface sans données.
 - `archives/prototype_partie_b/` : application parallèle du collègue de la piste B (autre contrat, non branchée),
   gardée pour ses idées. Voir son `LISEZMOI.md`.
