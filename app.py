@@ -7,6 +7,8 @@ Deux écrans dans une seule application :
 L'interface ne calcule rien : elle appelle analyser (piste A), evaluer et proposer_scenarios
 (piste B), demander (piste C), et affiche ce qu'elles renvoient.
 """
+import base64
+import functools
 from pathlib import Path
 
 import altair as alt
@@ -162,6 +164,17 @@ h3 {{ font-size: 1.3rem !important; letter-spacing: -0.01em; }}
 .ligne-titre .nom {{ font-weight: 600; }}
 .ligne-titre .montant {{ margin-left: auto; opacity: 0.72; }}
 .ligne-titre .poids {{ width: 4.4rem; text-align: right; font-variant-numeric: tabular-nums; }}
+.drapeau {{ width: 20px; height: 13px; object-fit: cover; border-radius: 2px; flex: 0 0 auto;
+            box-shadow: 0 0 0 1px rgba(128,128,128,.35); vertical-align: -2px; }}
+.globe {{ width: 20px; text-align: center; flex: 0 0 auto; font-size: 14px; line-height: 13px; }}
+.barre-pays {{ display: flex; gap: 2px; height: 18px; margin: .4rem 0 .6rem; }}
+.barre-pays span {{ display: block; height: 100%; }}
+.barre-pays span:first-child {{ border-radius: 4px 0 0 4px; }}
+.barre-pays span:last-child {{ border-radius: 0 4px 4px 0; }}
+.barre-pays span:only-child {{ border-radius: 4px; }}
+.legende-pays {{ display: flex; flex-wrap: wrap; gap: .4rem 1.6rem; font-size: 1rem; }}
+.legende-pays > span {{ display: inline-flex; align-items: center; gap: .45rem; }}
+.legende-pays .carre {{ width: 11px; height: 11px; border-radius: 3px; }}
 
 /* onglets : les libellés gardent leur taille par défaut, trop petite à cette échelle */
 [data-testid="stTabs"] button p {{ font-size: 1rem; }}
@@ -209,10 +222,42 @@ def liste_titres(mesures):
         pourcentage = f"{100 * part:.1f}".replace(".", ",")
         lignes.append(f'<div class="ligne-titre">'
                       f'<span class="pastille" style="background:{pastille}"></span>'
+                      f'{icone_pays(mesures.get("pays_par_titre", {}).get(titre))}'
                       f'<span class="nom">{titre}</span>'
                       f'<span class="montant">{montant}</span>'
                       f'<span class="poids">{pourcentage} %</span></div>')
     return "".join(lignes)
+
+
+# Drapeaux en petites images PNG embarquées (domaine public, flagcdn.com) : Windows n'affiche pas
+# les émojis de drapeaux, il écrirait « CA » et « US » en lettres.
+DOSSIER_DRAPEAUX = Path(__file__).parent / "assets" / "drapeaux"
+PAYS = {"canada": ("Canada", "ca"), "etats_unis": ("États-Unis", "us"), "mondial": ("Mondial (or, crypto)", None)}
+COULEURS_PAYS = {"clair": {"canada": "#d52b1e", "etats_unis": "#3c3b6e", "mondial": "#9a9a95"},
+                 "sombre": {"canada": "#e5544a", "etats_unis": "#8a8fd8", "mondial": "#898781"}}
+
+
+@functools.lru_cache(maxsize=None)
+def icone_pays(pays):
+    """Petit drapeau en HTML (image embarquée), un globe pour « mondial », rien si inconnu."""
+    if pays not in PAYS:
+        return ""
+    nom, code = PAYS[pays]
+    if code is None:
+        return f'<span class="globe" title="{nom}">🌐</span>'
+    donnees = base64.b64encode((DOSSIER_DRAPEAUX / f"{code}.png").read_bytes()).decode()
+    return f'<img class="drapeau" alt="{nom}" title="{nom}" src="data:image/png;base64,{donnees}">'
+
+
+def repartition_pays(mesures):
+    """Barre segmentée par pays, puis la légende avec drapeaux et pourcentages (jamais la couleur seule)."""
+    couleurs = COULEURS_PAYS[mode_theme()]
+    parts = [(p, mesures["poids_par_pays"].get(p, 0.0)) for p in PAYS if mesures["poids_par_pays"].get(p, 0) > 0]
+    barre = "".join(f'<span style="width:{100 * w:.2f}%;background:{couleurs[p]}" title="{PAYS[p][0]}"></span>'
+                    for p, w in parts)
+    legende = "".join(f'<span><span class="carre" style="background:{couleurs[p]}"></span>{icone_pays(p)}'
+                      f'{PAYS[p][0]} <b>{pct(w)}</b></span>' for p, w in parts)
+    return f'<div class="barre-pays">{barre}</div><div class="legende-pays">{legende}</div>'
 
 
 def etiquette(dico, valeur):
@@ -777,6 +822,24 @@ def resultats():
                    "et l'onglet Tableau plus bas gardent le détail, ligne par ligne.")
     else:
         st.caption("Part de chaque titre dans le capital.")
+
+    # ---- par pays et par devise
+    # Le pays répond à « où est mon argent » ; la devise, à un risque que les investisseurs
+    # canadiens voient rarement : la part cotée en dollars américains bouge aussi avec le change.
+    if mesures.get("poids_par_pays"):
+        st.subheader("Par pays et par devise")
+        st.markdown(repartition_pays(mesures), unsafe_allow_html=True)
+        usd = mesures.get("poids_par_devise", {}).get("USD", 0.0)
+        if usd > 0:
+            st.markdown(md(f"**{pct(usd)} du portefeuille est coté en dollars américains.** Sa valeur en dollars "
+                           "canadiens dépend aussi du taux de change : si le dollar canadien montait face au dollar "
+                           "américain, cette part perdrait de la valeur en CAD, même sans aucun mouvement en bourse. "
+                           "Ce risque de change est déjà compris dans la volatilité et les pertes mesurées."))
+        else:
+            st.markdown("**Tout le portefeuille est coté en dollars canadiens** : aucune exposition directe au "
+                        "taux de change USD/CAD.")
+        st.caption("Pays : marché de cotation. Un FNB compte pour son marché, sans voir son contenu ; l'or et les "
+                   "cryptoactifs n'ont pas de pays.")
 
     # ---- d'où vient le risque
     # Le graphique et le tableau portent les mêmes chiffres : deux onglets plutôt que l'un sous

@@ -19,7 +19,9 @@ Amazon EC2, dans le compte AWS de l'événement, active jusqu'à la fermeture de
    31 actifs couverts est signalé, jamais ignoré.
 2. **Verdict.** Score d'adéquation sur 100, verdict, et quatre notes expliquées : niveau de risque,
    risque de perte, diversification, résistance à la crise de 2022 (méthode plus bas).
-3. **Ce que vous détenez** et **d'où vient le risque** : poids de chaque titre dans le capital et
+3. **Ce que vous détenez** : chaque titre avec son drapeau, la répartition par pays (Canada, États-Unis,
+   mondial) et la part cotée en dollars américains, exposée au taux de change USD/CAD.
+   **D'où vient le risque** : poids de chaque titre dans le capital et
    dans le risque (graphique et tableau), et l'onglet **En cas de crise (2022)** : le portefeuille
    rejoué en dollars jour après jour pendant 2022, avec la limite de perte du profil.
 4. **Alertes** : contraintes violées (crypto refusée, secteur exclu) et avertissements (titre ou

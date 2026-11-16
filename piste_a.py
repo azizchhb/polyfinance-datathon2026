@@ -123,6 +123,18 @@ def univers():
             for r in table.itertuples()}
 
 
+@functools.lru_cache(maxsize=1)
+def origine():
+    """symbole -> (pays, devise). Pays : marché de cotation (TSX = canada, bourses de New York =
+    etats_unis) ; l'or et les cryptoactifs n'ont pas de pays (mondial). Devise : celle de la cotation."""
+    table = donnees.charger("assets_universe.csv")
+    def pays(r):
+        if r.asset_class in ("crypto", "etf_commodity"):
+            return "mondial"
+        return "canada" if r.market == "TSX" else "etats_unis"
+    return {str(r.ticker).strip().upper(): (pays(r), r.currency) for r in table.itertuples()}
+
+
 def symboles_non_couverts(portefeuille):
     """Symboles du portefeuille absents des 31 actifs du jeu de données (étape 9 : les signaler)."""
     connus = univers()
@@ -308,11 +320,15 @@ def analyser(portefeuille):
     gain = vol_sans_diversification - float(volatilite)
     ratio = vol_sans_diversification / float(volatilite) if volatilite > 0 else 1.0
 
-    par_classe, par_secteur = {}, {}
+    par_classe, par_secteur, par_pays, par_devise = {}, {}, {}, {}
+    provenance = origine()
     for s, w in zip(ordre, poids):
         classe, secteur = connus[s]
+        pays, devise = provenance[s]
         par_classe[classe] = par_classe.get(classe, 0.0) + float(w)
         par_secteur[secteur] = par_secteur.get(secteur, 0.0) + float(w)
+        par_pays[pays] = par_pays.get(pays, 0.0) + float(w)
+        par_devise[devise] = par_devise.get(devise, 0.0) + float(w)
 
     debut, fin = prix.index[0].date(), prix.index[-1].date()
     hypotheses = [
@@ -327,6 +343,11 @@ def analyser(portefeuille):
         "Crise de 2022 : le portefeuille actuel rejoué du premier au dernier jour de cotation de 2022, à "
         "pondérations constantes ; c'est la seule crise couverte (données à partir de novembre 2021), "
         "ni 2008 ni mars 2020. Une crise future peut toucher d'autres actifs.",
+        "Pays : marché de cotation (TSX au Canada, bourses de New York aux États-Unis), l'or et les "
+        "cryptoactifs comptés « mondial » ; un FNB compte pour son marché, sans voir son contenu (SPY, QQQ, "
+        "ESGV, AGG et TLT aux États-Unis ; XIU.TO, XBB.TO et ZST.TO au Canada).",
+        "Exposition au dollar américain : part du portefeuille cotée en USD (or et cryptoactifs compris). "
+        "Sa valeur en dollars canadiens bouge aussi avec le taux USD/CAD, déjà inclus dans le risque mesuré.",
         "Univers de 31 actifs choisi en 2026 parmi des titres devenus gros (biais du survivant). "
         "Aucune composition de FNB, aucune cote ESG, aucune donnée fondamentale.",
         _provenance_donnees(),
@@ -351,6 +372,10 @@ def analyser(portefeuille):
         "perte_crise_2022": crise["perte"] if crise else None,
         "variation_2022": crise["variation"] if crise else None,
         "perte_crise_2022_par_titre": crise["par_titre"] if crise else {},
+        # Ajout du 16 novembre : répartition par pays et exposition au dollar américain.
+        "poids_par_pays": par_pays,
+        "pays_par_titre": {s: provenance[s][0] for s in ordre},
+        "poids_par_devise": par_devise,
         "hypotheses": hypotheses,
     }
 
@@ -369,7 +394,8 @@ if __name__ == "__main__":
                     "poids_par_secteur", "classe_par_titre", "secteur_par_titre", "capital"}
     CLES_AJOUTEES = {"hypotheses", "volatilite_par_titre", "volatilite_sans_diversification",
                      "gain_diversification", "ratio_diversification",
-                     "perte_crise_2022", "variation_2022", "perte_crise_2022_par_titre"}
+                     "perte_crise_2022", "variation_2022", "perte_crise_2022_par_titre",
+                     "poids_par_pays", "pays_par_titre", "poids_par_devise"}
 
     DEMO = {"NVDA": 10000, "QQQ": 12500, "BTC-USD": 5000, "XIU.TO": 17500, "XBB.TO": 5000}
     PERSONAS = {

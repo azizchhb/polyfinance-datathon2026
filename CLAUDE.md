@@ -167,6 +167,9 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   poids dans `POIDS_AVEC_CRISE`) ; sans ces clés (fausse piste A), il garde les trois notes et les anciens poids. Un symbole hors des 31 actifs fait lever
   `ValueError` avec la liste des symboles non couverts ; `piste_a.symboles_non_couverts(portefeuille)`
   permet de les afficher avant d'appeler `analyser`.
+  Ajout du 16 novembre : `poids_par_pays` (canada, etats_unis, mondial pour l'or et la crypto, selon le marché de
+  cotation), `pays_par_titre` et `poids_par_devise` (CAD, USD : la part cotée en USD est exposée au change).
+  L'interface les montre sous « Ce que vous détenez », avec un drapeau par titre (`assets/drapeaux/`).
 - `evaluer(mesures, profil)` -> `score` (0 à 100), `verdict`, `niveau_effectif`, `notes` (quatre notes
   avec valeur, cible, note, poids, explication ; trois si la mesure de crise manque), `alertes` (code, gravite, message), `hypotheses`.
   Depuis le 15 novembre : une alerte de gravité `contrainte` (secteur exclu, crypto refusée) plafonne le
