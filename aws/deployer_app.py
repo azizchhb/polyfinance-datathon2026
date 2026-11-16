@@ -4,6 +4,7 @@ Lancer depuis la racine du dépôt : python aws/deployer_app.py
     (sans option)   crée ce qui manque, ou affiche l'adresse si la machine tourne déjà
     --mettre-a-jour redémarre la machine : au démarrage, elle récupère la dernière version de main
     --supprimer     arrête et supprime la machine (le rôle et le pare-feu restent, ils ne coûtent rien)
+    --fermer-port   n'accepte plus que CloudFront sur le port 80 (à lancer une fois le HTTPS vérifié)
 
 Pourquoi EC2 avec un rôle IAM : la machine reçoit ses droits AWS par son rôle, comme la Lambda.
 Aucune clé n'est copiée nulle part (règle 6). Le rôle ne permet que ce dont l'application a
@@ -11,6 +12,10 @@ besoin : appeler Bedrock, invoquer la Lambda des outils, lire le seau de donnée
 
 Au démarrage, la machine clone le dépôt public GitHub, installe requirements.txt et lance
 Streamlit comme service systemd sur le port 80 (relancé automatiquement en cas d'arrêt).
+
+Devant la machine, une distribution CloudFront sert le site en HTTPS (certificat fourni par AWS)
+et garde la même adresse si la machine redémarre. Aucun cache : chaque page est dynamique.
+Streamlit passe par une WebSocket, que CloudFront relaie.
 """
 import json
 import sys
@@ -137,7 +142,57 @@ def lancer(groupe):
 def adresse(identifiant):
     ec2.get_waiter("instance_running").wait(InstanceIds=[identifiant])
     instance = ec2.describe_instances(InstanceIds=[identifiant])["Reservations"][0]["Instances"][0]
-    return instance.get("PublicIpAddress")
+    return instance
+
+
+# Politiques gérées par AWS : aucun cache, et tous les en-têtes, cookies et paramètres transmis
+# à la machine (nécessaire pour la WebSocket et les sessions Streamlit).
+SANS_CACHE = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"   # Managed-CachingDisabled
+TOUT_TRANSMETTRE = "216adef6-5c7f-47e4-b989-5492eafa07d3"  # Managed-AllViewer
+
+
+def distribution(dns_machine):
+    """Distribution CloudFront en HTTPS devant la machine ; la crée si elle manque."""
+    cloudfront = boto3.client("cloudfront")
+    for d in cloudfront.list_distributions().get("DistributionList", {}).get("Items", []):
+        if d["Comment"] == NOM:
+            return d["DomainName"], d["Id"]
+    config = {
+        "CallerReference": f"{NOM}-{int(time.time())}", "Comment": NOM, "Enabled": True,
+        "PriceClass": "PriceClass_100", "HttpVersion": "http2",
+        "Origins": {"Quantity": 1, "Items": [{
+            "Id": "machine", "DomainName": dns_machine,
+            "CustomOriginConfig": {"HTTPPort": 80, "HTTPSPort": 443, "OriginProtocolPolicy": "http-only",
+                                   "OriginReadTimeout": 60, "OriginKeepaliveTimeout": 60}}]},
+        "DefaultCacheBehavior": {
+            "TargetOriginId": "machine", "ViewerProtocolPolicy": "redirect-to-https", "Compress": True,
+            "CachePolicyId": SANS_CACHE, "OriginRequestPolicyId": TOUT_TRANSMETTRE,
+            "AllowedMethods": {"Quantity": 7, "Items": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+                               "CachedMethods": {"Quantity": 2, "Items": ["GET", "HEAD"]}}},
+    }
+    d = cloudfront.create_distribution(DistributionConfig=config)["Distribution"]
+    print("Distribution CloudFront créée : 5 à 10 minutes avant qu'elle réponde.")
+    return d["DomainName"], d["Id"]
+
+
+def fermer_port():
+    """Port 80 réservé aux serveurs de CloudFront : plus d'accès direct par l'adresse IP en HTTP."""
+    groupe = pare_feu()
+    liste = ec2.describe_managed_prefix_lists(Filters=[{
+        "Name": "prefix-list-name", "Values": ["com.amazonaws.global.cloudfront.origin-facing"]}])
+    liste = liste["PrefixLists"][0]["PrefixListId"]
+    try:
+        ec2.authorize_security_group_ingress(GroupId=groupe, IpPermissions=[{
+            "IpProtocol": "tcp", "FromPort": 80, "ToPort": 80, "PrefixListIds": [{"PrefixListId": liste}]}])
+    except ec2.exceptions.ClientError as erreur:
+        if "Duplicate" not in str(erreur):
+            raise
+    try:
+        ec2.revoke_security_group_ingress(GroupId=groupe, IpPermissions=[{
+            "IpProtocol": "tcp", "FromPort": 80, "ToPort": 80, "IpRanges": [{"CidrIp": "0.0.0.0/0"}]}])
+    except ec2.exceptions.ClientError:
+        pass
+    print("Port 80 fermé au public : seul CloudFront atteint la machine.")
 
 
 if __name__ == "__main__":
@@ -151,10 +206,15 @@ if __name__ == "__main__":
     if existante and "--mettre-a-jour" in sys.argv:
         ec2.reboot_instances(InstanceIds=[existante["InstanceId"]])
         print("Redémarrage : la machine récupère main et relance l'application (environ 1 minute).")
+    if "--fermer-port" in sys.argv:
+        fermer_port()
+        sys.exit()
     if existante:
-        ip = adresse(existante["InstanceId"])
+        instance = adresse(existante["InstanceId"])
     else:
         role()
-        ip = adresse(lancer(pare_feu()))
+        instance = adresse(lancer(pare_feu()))
         print("Installation en cours sur la machine (environ 3 à 5 minutes avant que la page réponde).")
-    print(f"Adresse publique : http://{ip}")
+    domaine, _ = distribution(instance["PublicDnsName"])
+    print(f"Machine : http://{instance.get('PublicIpAddress')}")
+    print(f"Adresse publique : https://{domaine}")

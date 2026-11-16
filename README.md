@@ -7,8 +7,8 @@ pour Amira, Mateo et Robert. Un agent sur Amazon Bedrock explique les résultats
 lui-même et sans jamais donner de conseil. Simulation à but éducatif : aucune transaction réelle,
 aucune donnée bancaire réelle, aucun conseil financier personnalisé.
 
-**Application en ligne : http://3.89.241.117** (servie par Amazon EC2 dans le compte AWS de
-l'événement, active jusqu'à la fermeture de ce compte).
+**Application en ligne : https://dw5l2fp67oxxw.cloudfront.net** (Amazon CloudFront en HTTPS devant
+Amazon EC2, dans le compte AWS de l'événement, active jusqu'à la fermeture de ce compte).
 
 ## Ce que fait l'application
 
@@ -66,7 +66,8 @@ besoin de Bedrock, et il le dit dans ses limites quand Bedrock est injoignable.
 python aws/preuves/preuve1_bedrock.py   # vérifie l'accès à Bedrock et les modèles disponibles
 python donnees.py televerser            # crée le seau S3 s'il manque et dépose les données
 python aws/deployer_lambda.py           # crée ou met à jour la fonction Lambda des outils
-python aws/deployer_app.py              # met l'application en ligne sur EC2 et affiche son adresse
+python aws/deployer_app.py              # met l'application en ligne (EC2 + CloudFront en HTTPS) et affiche son adresse
+python aws/deployer_app.py --fermer-port     # une fois le HTTPS vérifié : la machine n'accepte plus que CloudFront
 python aws/deployer_app.py --mettre-a-jour   # la machine récupère la dernière version de main
 ```
 
@@ -87,7 +88,8 @@ App Streamlit  <->  Agent sur Bedrock  <->  Outils sur Lambda (pistes A et B)  <
 | **Amazon Bedrock** | Fait tourner l'agent (API Converse avec appels d'outils, Claude Opus 5.5). |
 | **AWS Lambda** | `alphaforge-outils` exécute les quatre outils de l'agent (`analyser`, `evaluer`, `simuler`, `proposer_scenarios`) avec le code des pistes A et B. |
 | **Amazon S3** | Garde le jeu de données ; `donnees.py` le lit (cache local, copie du dépôt en secours). |
-| **Amazon EC2** | `alphaforge-app` sert l'interface Streamlit au public (port 80). Ses droits AWS viennent d'un rôle IAM (`alphaforge-app-role` : Bedrock, invoquer la Lambda, lire le seau, écrire les traces) : aucune clé sur la machine. |
+| **Amazon CloudFront** | Sert le site en HTTPS (certificat fourni par AWS), sans cache, et relaie la WebSocket de Streamlit. L'adresse reste la même si la machine redémarre. |
+| **Amazon EC2** | `alphaforge-app` fait tourner l'interface Streamlit (port 80, ouvert seulement aux serveurs de CloudFront). Ses droits AWS viennent d'un rôle IAM (`alphaforge-app-role` : Bedrock, invoquer la Lambda, lire le seau, écrire les traces) : aucune clé sur la machine. |
 | **Amazon CloudWatch Logs** | Garde la trace de chaque demande, appel d'outil, contrôle et réponse (`/alphaforge/agent`), et un JSON par appel d'outil (`/aws/lambda/alphaforge-outils`). |
 
 Si Lambda est injoignable, l'agent exécute le même code en local et le signale dans ses limites.
