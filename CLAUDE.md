@@ -183,7 +183,7 @@ clés en minuscules sans accent, JSON simple (pas d'objets pandas ou numpy).
   recherches de rechange comblent les doublons (deux scénarios menant au même portefeuille comptent pour un).
   Secteurs exclus (ESG) : le montant libéré ne va que vers les obligations, l'or ou un FNB d'actions qui écarte
   lui-même ces secteurs (`destinations_permises` : ESGV pour l'énergie seulement ; jamais XIU.TO, SPY ni QQQ),
-  et sans répartition au prorata. Chaque scénario liste ses coûts dans `degrade` (montant déplacé, titres vendus
+  et sans répartition au prorata. Chaque scénario liste ses coûts dans `degrade` (montant déplacé, titres retirés
   en entier, concentration dans un seul titre, crypto acceptée qui diminue) : jamais vide. La cible de la note
   de crise est, comme celle de la perte, la plus petite entre la perte déclarée et le tableau.
   Chaque scénario a trois onglets dans l'interface : « Changements », « Et pendant la crise de 2022 ? » et

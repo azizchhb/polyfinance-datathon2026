@@ -132,7 +132,7 @@ def test_couts_toujours_visibles():
     portefeuille = {"SPY": 30000, "NVDA": 10000, "BTC-USD": 10000}
     res = simuler(portefeuille, {"type": "retirer", "symbole": "NVDA", "vers": "SPY"}, AMIRA, fausse_analyser)
     assert any(l.startswith("Montant à déplacer") for l in res["degrade"])
-    assert any("vendu(s) en entier : NVDA" in l for l in res["degrade"])
+    assert any("retiré(s) en entier : NVDA" in l for l in res["degrade"])
 
 
 if __name__ == "__main__":

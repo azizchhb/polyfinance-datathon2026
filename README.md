@@ -26,7 +26,7 @@ l'événement, active jusqu'à la fermeture de ce compte).
    secteur trop lourd, profil contradictoire).
 5. **Scénarios fictifs** : 3 si le verdict est inadéquat, 2 s'il est à surveiller, aucun s'il est
    adéquat (1 si une contrainte reste violée). Chacun montre les poids avant et après, ce qui
-   s'améliore, ce qui se dégrade (montant déplacé, titres vendus, concentration), ses hypothèses,
+   s'améliore, ce qui se dégrade (montant déplacé, titres retirés, concentration), ses hypothèses,
    et le même scénario rejoué pendant la crise de 2022.
 6. **Discussion avec l'agent** : diagnostic, scénario (« je veux ajouter 15 000 $ de NVDA »),
    question d'explication (« d'où vient ce chiffre ? »). Sous chaque réponse, « Ce que l'agent a

@@ -451,7 +451,7 @@ def _phrase(changement, portefeuille, avant, apres):
 
 def _couts(portefeuille, apres, changement, mesures_avant, mesures_apres, profil):
     """Ce qu'un changement coûte, au-delà des notes : un scénario n'est jamais gratuit.
-    Montant déplacé, titres vendus en entier, concentration dans un seul titre, exposition
+    Montant déplacé, titres retirés en entier, concentration dans un seul titre, exposition
     choisie par la personne qui diminue (crypto acceptée)."""
     couts = []
     t0, t1 = sum(portefeuille.values()), sum(apres.values())
@@ -464,7 +464,7 @@ def _couts(portefeuille, apres, changement, mesures_avant, mesures_apres, profil
                          "frais et impôts non comptés")
     vendus = sorted(k for k in portefeuille if apres.get(k, 0) <= 0)
     if vendus:
-        couts.append(f"Titre(s) vendu(s) en entier : {', '.join(vendus)}")
+        couts.append(f"Titre(s) retiré(s) en entier : {', '.join(vendus)}")
     plus_gros = max(w1, key=w1.get)
     if w1[plus_gros] >= 0.40 and w1[plus_gros] > w0.get(plus_gros, 0) + 0.005:
         couts.append(f"{plus_gros} porterait {pct(w1[plus_gros])} du capital à lui seul")
