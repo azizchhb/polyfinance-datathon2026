@@ -1,4 +1,4 @@
-# Diversifié pour qui ?
+# Calibre : le diagnostic sur mesure
 
 Datathon PolyFinances 2026, défi AlphaForge AI. Les outils de diversification donnent souvent la
 même note à tout le monde. Celui-ci mesure un portefeuille une fois, puis compare chaque mesure à

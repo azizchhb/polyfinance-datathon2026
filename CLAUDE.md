@@ -50,7 +50,11 @@ Le PDF et les diapositives des organisateurs sont dans `docs/enonce/`, avec un r
 5. **Chaque chiffre affiché porte sa cible, son hypothèse et sa limite.** L'outil dit ce qu'il ne sait pas.
 6. **Aucune clé AWS dans le code, dans Git ou dans une conversation.**
 
-## L'idée du projet : « Diversifié pour qui ? »
+## L'idée du projet : Calibre, le diagnostic sur mesure
+
+Nom du produit depuis le 16 novembre : **Calibre**, slogan « le diagnostic sur mesure » (ancien nom de travail :
+« Diversifié pour qui ? »). On évite « optimisation » : l'outil ne cherche pas le meilleur portefeuille, il mesure,
+compare aux cibles du profil et montre des scénarios fictifs.
 
 Les outils existants (ex. Wealthscope, offert par Banque Nationale Courtage direct) donnent la
 même note de diversification à tout le monde. Le nôtre mesure le portefeuille une fois, puis

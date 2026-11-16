@@ -656,7 +656,7 @@ etat.setdefault("messages", [])
 if etat.etape == "resultats" and not (etat.get("profil") and etat.get("portefeuille")):
     etat.etape = "questionnaire"
 
-st.set_page_config(page_title="Diversifié pour qui ?", layout="wide",
+st.set_page_config(page_title="Calibre · le diagnostic sur mesure", layout="wide",
                    initial_sidebar_state="collapsed")
 # Largeur bornée plutôt que la mise en page « centered » : on choisit le nombre de pixels,
 # plus large pour les résultats (un tableau de cinq colonnes) que pour le questionnaire.
@@ -665,7 +665,8 @@ st.markdown(style(900 if etat.etape == "questionnaire" else 1180), unsafe_allow_
 
 # ------------------------------------------------------------ 1. questionnaire
 def questionnaire():
-    st.title("Diversifié pour qui ?")
+    st.title("Calibre")
+    st.subheader("Le diagnostic sur mesure")
     st.markdown("Les outils habituels donnent la même note de diversification à tout le monde. Ici, votre "
                 "portefeuille est mesuré une fois, puis chaque mesure est comparée à une cible qui dépend de "
                 "**votre** profil, et chaque chiffre est expliqué.")
@@ -773,7 +774,7 @@ def resultats():
     depart = etat.get("persona_du_profil", "Personnalisé")
 
     gauche, droite = st.columns([4, 1], vertical_alignment="bottom")
-    gauche.title("Diversifié pour qui ?")
+    gauche.title("Calibre")
     gauche.caption(AVERTISSEMENT)
     if droite.button("Modifier mes réponses", width="stretch"):
         # Streamlit oublie la valeur d'un widget absent de la page : on remet le point de départ

@@ -115,7 +115,7 @@ def journaliser(evenement, **champs):
 
 
 # ------------------------------------------------------------ consigne système
-CONSIGNE = """Tu es l'agent de « Diversifié pour qui ? », un outil pédagogique de simulation. Il mesure
+CONSIGNE = """Tu es l'agent de Calibre, « le diagnostic sur mesure », un outil pédagogique de simulation. Il mesure
 un portefeuille une fois, puis compare chaque mesure à une cible qui dépend du profil de la personne.
 
 Règles absolues :
